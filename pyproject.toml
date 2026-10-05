@@ -4,7 +4,9 @@ version = "0.1.0"
 description = "Legal search for Kyrgyz law in English, Kyrgyz, and Russian, with exact citations."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "httpx>=0.28.1",
+]
 
 [dependency-groups]
 dev = [
