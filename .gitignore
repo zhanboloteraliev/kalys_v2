@@ -31,3 +31,5 @@ htmlcov/
 
 # Local API probe report
 probe_report.md
+ingest_report.md
+hf_report.md
