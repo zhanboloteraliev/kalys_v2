@@ -147,28 +147,51 @@ def main() -> None:
         if response.status_code != 200:
             continue
 
-        edition_fields = find_fields(response.json(), "edition")
-        log(f"Edition fields in GetDocument ({len(edition_fields)} found, first 15):")
-        for path, value in list(edition_fields.items())[:15]:
-            log(f"- {path} = {value}")
+        # Round 1 showed the real shape: "editions": [{"id": ..., "nameRus": "dd.mm.yyyy"}, ...]
+        editions = response.json()["editions"]
+        log(f"### All editions of {act} ({len(editions)}): id = date")
+        log(", ".join(f"{edition['id']} = {edition['nameRus']}" for edition in editions))
         log()
 
-        edition_id = first_value({p: v for p, v in edition_fields.items() if "id" in p.lower()})
-        if edition_id is None:
-            continue
-        for lang in ("ru", "kg"):
-            response = client.get(
-                "/api/v1/GetEdition", params={"editionId": edition_id, "lang": lang}
-            )
-            show(f"GetEdition {act} editionId={edition_id} lang={lang}", response)
+        # Test the first and the last edition, in both languages.
+        edition_ids = sorted({editions[0]["id"], editions[-1]["id"]})
+        for edition_id in edition_ids:
+            for lang in ("ru", "kg"):
+                response = client.get(
+                    "/api/v1/GetEdition", params={"editionId": edition_id, "lang": lang}
+                )
+                show(f"GetEdition {act} editionId={edition_id} lang={lang}", response)
+                show_html_start(response)
 
-        # The DOCX fallback: test only once.
+        # The DOCX fallback: test only once, in both languages.
         if act == "constitution":
-            response = client.get("/api/v1/GetFile", params={"refId": edition_id, "lang": "ru"})
-            log(f"## GetFile refId={edition_id} lang=ru")
-            log(f"- Status: {response.status_code}, content type: {response.content_type}")
-            log(f"- Size: {len(response.body)} bytes, first bytes: {response.body[:4]!r}")
-            log("- (DOCX files start with b'PK')")
+            for lang in ("ru", "kg"):
+                response = client.get(
+                    "/api/v1/GetFile", params={"refId": edition_ids[0], "lang": lang}
+                )
+                log(f"## GetFile refId={edition_ids[0]} lang={lang}")
+                log(f"- Status: {response.status_code}, content type: {response.content_type}")
+                log(f"- Size: {len(response.body)} bytes, first bytes: {response.body[:4]!r}")
+                log("- (DOCX files start with b'PK')")
+                log()
+
+
+def show_html_start(response) -> None:
+    """Print the start of every long text field, so we can see the HTML markup."""
+    if response.status_code != 200:
+        return
+    try:
+        data = response.json()
+    except ValueError:
+        return
+    if not isinstance(data, dict):
+        return
+    for key, value in data.items():
+        if isinstance(value, str) and len(value) > 500:
+            log(f"Start of `{key}` ({len(value)} chars):")
+            log("```html")
+            log(value[:2500])
+            log("```")
             log()
 
 
