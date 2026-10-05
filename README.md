@@ -44,7 +44,7 @@ per second, a clear User-Agent with contact info, and a local cache, so each pag
 ## Roadmap
 
 - [x] Project setup and CI
-- [ ] Check the Ministry of Justice API ([notes](docs/cbd-api.md))
+- [x] Check the Ministry of Justice API ([notes](docs/cbd-api.md))
 - [ ] Download all editions of the 3 acts in Kyrgyz and Russian
 - [ ] Split texts into articles and store them in PostgreSQL
 - [ ] English machine translation of every article
