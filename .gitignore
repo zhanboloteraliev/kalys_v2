@@ -28,3 +28,6 @@ htmlcov/
 .vscode/
 .idea/
 .DS_Store
+
+# Local API probe report
+probe_report.md
