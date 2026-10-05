@@ -43,6 +43,11 @@ class Response:
     def json(self):
         return json.loads(self.body)
 
+    def raise_for_status(self) -> None:
+        """Fail loudly if the answer is not 200 OK."""
+        if self.status_code != 200:
+            raise RuntimeError(f"{self.url} returned {self.status_code}")
+
     @property
     def text(self) -> str:
         return self.body.decode("utf-8", errors="replace")
