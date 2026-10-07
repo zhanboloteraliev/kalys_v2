@@ -42,3 +42,16 @@
 English translation, hybrid search, Bedrock answers, web UI (English default, sample
 questions), AWS deploy, rate limiting + cost cap, monitoring, dashboard.
 More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
+
+## Current status (update after each step)
+- Step 1 (setup, CI): done.
+- Step 2 (API check): done. See `docs/cbd-api.md`. The site blocks cloud servers (403),
+  so all downloads run on the owner's laptop.
+- Step 3 (ingest): code done (`python -m kalys.ingest`, `python -m kalys.hf_dataset`).
+  First full run on 2026-10-07: 182 files (91 editions x 2 languages), no errors.
+  To do: read `ingest_report.md` and `hf_report.md`, check that `lang=kg` text is really
+  Kyrgyz and that old editions differ from the newest, update `docs/cbd-api.md`,
+  add the Step 3 entry to `LEARNING.md`.
+- Step 4 (parse into articles, match ru/kg, PostgreSQL via Docker Compose, parser tests
+  with small saved samples, compare article counts with the Hugging Face dataset): next.
+- Stop after Step 4 and give the owner a summary. No AWS work yet.
