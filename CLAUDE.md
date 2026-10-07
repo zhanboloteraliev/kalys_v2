@@ -41,3 +41,4 @@
 ## Later phases (not now)
 English translation, hybrid search, Bedrock answers, web UI (English default, sample
 questions), AWS deploy, rate limiting + cost cap, monitoring, dashboard.
+More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
