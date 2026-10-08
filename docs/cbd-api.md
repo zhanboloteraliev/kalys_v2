@@ -86,15 +86,37 @@ Size: 0.3 MB (Constitution) to 2.7 MB (Criminal Procedure Code, Kyrgyz).
 **Surprises (important):**
 1. **The text is always in `contentRu`, also for `lang=kg`.** `contentKg` was always `null`.
    The `lang` parameter does change the text: `lang=kg` gives a different length.
-   *Not yet checked:* that the `lang=kg` text is really in Kyrgyz.
+   **Checked 2026-10-07:** yes, the `lang=kg` text is really Kyrgyz. Read the HTML body of
+   the Constitution and the Criminal Code by hand: real Kyrgyz words and grammar
+   (`Кыргыз Республикасынын Конституциясы`, `1-берене`, ...), not Russian.
 2. **`id` and `nameRus` in the answer can be wrong.** For the first edition of the
    Criminal Code (`editionId=1283352`, 28.10.2021) the answer said `"id": 56638,
    "nameRus": "24.07.2026"` (the newest edition). But the text length is different from the
    newest edition, so the text is probably the old one.
    **Rule for our code:** take the edition id and date from `GetDocument.editions`,
-   never from the `GetEdition` answer. *Not yet checked:* that the text is really the old edition.
+   never from the `GetEdition` answer.
+   **Checked 2026-10-07:** every one of the 182 downloaded files has a different
+   `sha256` of its text (see `ingest_report.md`, "N different texts out of N editions"
+   for each act). That is consistent with each edition holding its own, distinct text,
+   not a copy of the newest edition.
 3. The HTML is a Microsoft Word export with a big `<style>` block. The `<meta charset>`
    says `windows-1251` or `unicode`, but the JSON is UTF-8. Ignore the meta tag.
+4. **Kyrgyz-only letters (ң, ө, ү, Ң, Ө, Ү) are sometimes HTML numeric entities, not
+   plain UTF-8 characters**, inconsistently between editions of the same act. Example,
+   Criminal Code edition `18.01.2022`: literal `ү`. Edition `16.06.2022`: the same letter
+   written as `&#1199;`. Our Step 3 ingest check (`count_kyrgyz_letters` in
+   `src/kalys/ingest.py`) only counts literal characters, so some Kyrgyz files show
+   "0 Kyrgyz letters" even though they are Kyrgyz (checked by hand, see point 1).
+   **Rule for Step 4:** run `html.unescape()` on the text before parsing articles or
+   counting letters, or the entity-encoded editions will look empty/wrong.
+5. **"Added articles" (e.g. Статья 71-1, inserted after an amendment) are written with a
+   superscript digit, in three different encodings in the same document:** a `<sup>1</sup>`
+   tag, a named HTML entity (`&sup1;`), or rarely a raw Unicode superscript character
+   (`¹`). All three mean "-1". Treating the superscript as plain text instead (ignoring
+   it) merges it into the article number, e.g. "Статья 21" + superscript "1" reads as
+   "Статья 211" - colliding with the real, unrelated "Статья 211". Checked 2026-10-07,
+   `src/kalys/parse.py` turns every form of the superscript into a literal `-` + digit
+   before splitting into articles.
 
 ### GET /GetFile?refId=1202952&lang=ru
 Returns a `.docx` file (`application/vnd.openxmlformats-officedocument.wordprocessingml.document`,
@@ -102,8 +124,8 @@ starts with `PK`). Works for `lang=ru` (135 KB) and `lang=kg` (133 KB).
 `refId` is the edition id. This is our fallback if the HTML is hard to parse.
 
 ## What is missing or unknown
-- No clean "article" structure: we must split the HTML into articles ourselves.
-- Not yet checked: Kyrgyz text quality and the old-edition text (see surprises 1 and 2).
+- No clean "article" structure: we must split the HTML into articles ourselves, and
+  unescape HTML entities first (see surprise 4).
 - No `Last-Modified` or version field, so we cannot ask "what changed since last time".
   We re-download the editions list (`GetDocument`) and fetch only new edition ids.
 
