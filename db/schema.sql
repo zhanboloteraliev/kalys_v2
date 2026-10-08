@@ -25,3 +25,20 @@ CREATE TABLE IF NOT EXISTS articles (
     text TEXT NOT NULL,
     UNIQUE (edition_id, lang, number)
 );
+
+-- Step 5: a machine translation of one `articles` row (source_lang, number) into
+-- English. Kept in its own table, never mixed into `articles`, because it is not
+-- an original text (see CLAUDE.md). Always show "Machine translation. Not an
+-- official text." next to this text when displaying it - this table does not
+-- repeat that label on every row, the display layer adds it.
+CREATE TABLE IF NOT EXISTS translations (
+    id SERIAL PRIMARY KEY,
+    edition_id INTEGER NOT NULL REFERENCES editions (id),
+    number TEXT NOT NULL,
+    source_lang TEXT NOT NULL DEFAULT 'ru',
+    title TEXT NOT NULL,
+    text TEXT NOT NULL,
+    model TEXT NOT NULL,
+    translated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (edition_id, number)
+);

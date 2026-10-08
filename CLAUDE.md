@@ -63,4 +63,15 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   3 acts, 91 editions, 86,527 article rows into Postgres. Checked row counts and
   spot-checked Constitution Article 1 in both languages - correct, matched text.
   See `docs/cbd-api.md` (surprise 5) and the Step 4 entry in `LEARNING.md`.
-- Stopped after Step 4, as planned. No AWS work done.
+- Step 5 (English translation of the current edition of all 3 acts, 1,100 articles
+  total: Constitution 116, Criminal Code 435, Criminal Procedure Code 549): done.
+  Translated directly by the AI assistant as part of normal response generation (no
+  paid API call needed for this one-time backlog). `src/kalys/translate.py` (with
+  Claude and Gemini translator classes, disk-cached, retry with backoff) is built and
+  ready for later automated translation of new articles and amendments once a paid
+  API key is added - a deliberate division of labor the owner chose. Translations
+  live in a separate `translations` table (never mixed into `articles`, the source of
+  truth), loaded via `python -m kalys.import_translations` after verifying an exact
+  article-number match against the Russian source for each act (no missing,
+  duplicate, or extra articles). See the Step 5 entry in `LEARNING.md`.
+- Stopped after Step 5. No AWS work done.

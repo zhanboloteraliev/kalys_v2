@@ -162,3 +162,75 @@ Short notes after each step: what we built, why, and what an interviewer might a
   reported the wrong edition as "the current law" for two of the three acts, because of
   the `sorted(edition_ids)` bug. Comparing against the Hugging Face numbers (and reading
   `docs/cbd-api.md` again) is what caught it.
+
+## Step 5: English translation
+
+**What we built**
+- A `translations` table in Postgres (separate from `articles`, since a machine
+  translation is not an original text): one row per edition per article number, with
+  the model/source that produced it.
+- `src/kalys/translate.py`: a translator interface with two implementations
+  (`ClaudeTranslator`, `GeminiTranslator`), disk-cached per article, that can later
+  translate new articles and amendments automatically once a paid API key is in use.
+  Includes retry with backoff on rate-limit (429) and server-overload (5xx) errors.
+- `src/kalys/export_for_translation.py` / `import_translations.py`: a plain-text,
+  numbered-block format (`=== ARTICLE N ===` / `TITLE:` / `TEXT:`) for moving all
+  current-edition articles of the 3 acts out of Postgres and back in after translation.
+- The actual one-time translation of all 1,100 current-edition articles (Constitution
+  116, Criminal Code 435, Criminal Procedure Code 549), done directly by the AI
+  assistant as part of normal response generation - no paid API call needed for this
+  one-time backlog.
+
+**Why**
+- Keeping translations in their own table means the original `articles` rows (the
+  source of truth, per `CLAUDE.md`) are never touched, and the English text can always
+  be re-generated or corrected without re-parsing anything.
+- A pluggable translator interface means the one-time manual backlog and the future
+  automated pipeline (for new articles/amendments) share the same prompt, parsing,
+  and caching logic - only the "who answers the prompt" part differs.
+- Free-tier automated translation (Gemini) was too slow in practice (about one article
+  every 5 minutes, 90+ hours projected for ~1,100 articles) to use for a one-time
+  backlog, so the backlog was done directly instead, saving the paid API key for later,
+  smaller, ongoing translation jobs (new articles, amendments) where speed matters less.
+
+**What we learned**
+- `export`'ing an env var in one terminal does not reach a separate shell/tool
+  invocation; `python-dotenv` + a `.env` file solves this reliably.
+- The installed `google-genai` SDK raises `APIStatusError` subclasses that all expose
+  `.status_code`; retry logic must check both 429 (rate limit) and 5xx (server
+  overload), not just 429 - the first real API call failed on an uncaught 503.
+- A naive prompt can make the model invent a plausible-looking title ("Article 1.")
+  for an article that has no title in the original. Explicit negative instructions
+  ("do not invent one, return \"\"") are needed, and must be checked against the real
+  API, not assumed correct from reading the prompt.
+- A batch job must write each result to the database immediately, not only at the very
+  end - otherwise an interruption (e.g. stopping a too-slow background run) risks
+  losing all progress even if nothing was actually corrupted.
+- Verifying a 549-article manual translation by eye is impractical; comparing the
+  exact set of article numbers between source and translation (via the same
+  `parse_translations()` used for import) catches missing/duplicate/extra articles
+  reliably and cheaply before loading into the database.
+- A parsing artifact from Step 4 surfaced during translation: the Criminal Code's
+  trailing "Приложение 1" (Appendix 1, a list of 28 legal definitions) was never
+  recognized as a new heading by the Step 4 parser and got absorbed into the stored
+  text of Article 416. The translation was kept faithful to what is actually in the
+  database (mercenarism article + the full appendix text), rather than "fixed" outside
+  the data pipeline.
+
+**Interview questions**
+- *Why a separate `translations` table instead of an `english_text` column on
+  `articles`?* The original Kyrgyz/Russian text must never be touched or implied to be
+  equivalent to a derived translation; a separate table with its own `model` and
+  `translated_at` columns keeps that distinction explicit and queryable.
+- *Why build both a Claude and a Gemini translator if only one was used for the
+  backlog?* The interface and tests were built for the long-term (paid API, ongoing
+  automated translation of amendments); the backlog itself used neither, because
+  direct generation was faster and had no incremental cost for a one-time job.
+- *How do you verify 1,100 machine-translated legal articles without reading all of
+  them?* Structural checks (exact article-number parity, no duplicates/missing) catch
+  the most damaging class of error - a dropped or merged article - cheaply. Spot
+  checks by hand catch translation-quality issues on a sample.
+- *What would you tell a new engineer about trusting output from a free-tier LLM API
+  for a time-sensitive batch job?* Measure throughput on a handful of real calls before
+  committing to the full job; "it works" and "it works fast enough" are different
+  questions.
