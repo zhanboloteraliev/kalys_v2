@@ -39,8 +39,8 @@
   `kalys.eraliev.com`, delegated with NS records from the current DNS provider.)
 
 ## Later phases (not now)
-English translation, hybrid search, Bedrock answers, web UI (English default, sample
-questions), AWS deploy, rate limiting + cost cap, monitoring, dashboard.
+Bedrock answers, web UI (English default, sample questions), AWS deploy, rate limiting
++ cost cap, monitoring, dashboard.
 More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
 
 ## Current status (update after each step)
@@ -74,4 +74,15 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   truth), loaded via `python -m kalys.import_translations` after verifying an exact
   article-number match against the Russian source for each act (no missing,
   duplicate, or extra articles). See the Step 5 entry in `LEARNING.md`.
-- Stopped after Step 5. No AWS work done.
+- Step 6 (hybrid search: keyword search + semantic search, merged with Reciprocal
+  Rank Fusion): done. Switched the Postgres image to `pgvector/pgvector:pg16` (no
+  data loss - same volume, same Postgres 16). Added a local, multilingual embedding
+  model (`sentence-transformers`, no API key, no rate limit) and generated `tsvector`
+  keyword-search columns. `uv run python -m kalys.embed` loaded 3,295 embeddings
+  (every current-edition article, in each language it has text in: en/ru/kg).
+  `uv run python -m kalys.search "<question>"` searches all three languages for
+  every question (no language-detection step - tried one, found it could misread a
+  question and break the search for it completely, see `LEARNING.md`) and merges the
+  6 ranked lists with RRF. Tested in all 3 languages: exact matches rank 1st for
+  English, Russian, and Kyrgyz. See the Step 6 entry in `LEARNING.md`.
+- Stopped after Step 6. No AWS work done.

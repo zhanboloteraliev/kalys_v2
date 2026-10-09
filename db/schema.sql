@@ -2,6 +2,9 @@
 -- edition_date and the (edition_id, lang, number) pair give an exact citation:
 -- act, article, edition date.
 
+-- Step 6: pgvector adds the `vector` column type, for semantic search.
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS acts (
     slug TEXT PRIMARY KEY,
     document_code TEXT NOT NULL,
@@ -26,6 +29,15 @@ CREATE TABLE IF NOT EXISTS articles (
     UNIQUE (edition_id, lang, number)
 );
 
+-- Step 6: a keyword-search column for the original text. Postgres has no
+-- Kyrgyz dictionary, so kg rows fall back to 'simple' (no stemming) while ru
+-- rows use the 'russian' dictionary.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS ts tsvector
+    GENERATED ALWAYS AS (
+        to_tsvector(CASE WHEN lang = 'ru' THEN 'russian'::regconfig ELSE 'simple'::regconfig END, text)
+    ) STORED;
+CREATE INDEX IF NOT EXISTS idx_articles_ts ON articles USING GIN (ts);
+
 -- Step 5: a machine translation of one `articles` row (source_lang, number) into
 -- English. Kept in its own table, never mixed into `articles`, because it is not
 -- an original text (see CLAUDE.md). Always show "Machine translation. Not an
@@ -42,3 +54,26 @@ CREATE TABLE IF NOT EXISTS translations (
     translated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (edition_id, number)
 );
+
+-- Step 6: a keyword-search column for the English translation.
+ALTER TABLE translations ADD COLUMN IF NOT EXISTS ts tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', text)) STORED;
+CREATE INDEX IF NOT EXISTS idx_translations_ts ON translations USING GIN (ts);
+
+-- Step 6: a semantic embedding of one article's text in one language (its
+-- title + text, from `translations` for 'en' or `articles` for 'ru'/'kg'),
+-- for similarity search with pgvector. One embedding per (edition, number,
+-- lang): a Kyrgyz query is compared against 'kg' embeddings, not against
+-- a cross-lingual guess from the English ones. `model` records which
+-- embedding model made the vector, in case we change models later.
+CREATE TABLE IF NOT EXISTS embeddings (
+    id SERIAL PRIMARY KEY,
+    edition_id INTEGER NOT NULL REFERENCES editions (id),
+    number TEXT NOT NULL,
+    lang TEXT NOT NULL CHECK (lang IN ('en', 'ru', 'kg')),
+    embedding vector(768) NOT NULL,
+    model TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (edition_id, number, lang)
+);
+CREATE INDEX IF NOT EXISTS idx_embeddings_vec ON embeddings USING hnsw (embedding vector_cosine_ops);

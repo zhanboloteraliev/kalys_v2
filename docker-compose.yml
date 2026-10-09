@@ -1,6 +1,7 @@
 services:
   db:
-    image: postgres:16
+    # Same Postgres 16, plus the pgvector extension for Step 6's semantic search.
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: kalys
       POSTGRES_USER: kalys

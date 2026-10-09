@@ -234,3 +234,108 @@ Short notes after each step: what we built, why, and what an interviewer might a
   for a time-sensitive batch job?* Measure throughput on a handful of real calls before
   committing to the full job; "it works" and "it works fast enough" are different
   questions.
+
+## Step 6: hybrid search
+
+**What we built**
+- Switched the Postgres image to `pgvector/pgvector:pg16` (same Postgres 16, adds the
+  `vector` column type) and added it to `db/schema.sql` via `CREATE EXTENSION vector`.
+  No data loss: the container was recreated, the data volume was not.
+- `embeddings` table: one semantic embedding per current-edition article **per
+  language it has text in** (`en` from `translations`, `ru`/`kg` from `articles`),
+  made by a local, multilingual model (`sentence-transformers`,
+  `paraphrase-multilingual-mpnet-base-v2`) - no API key, no network call after the
+  model is downloaded once, no rate limit. 3,295 embeddings total (1,100 en, 1,100 ru,
+  1,095 kg - a few articles have no kg original, see Step 4).
+- Generated `tsvector` columns (keyword-search indexes) on `articles.text` (using the
+  `russian` dictionary for `ru` rows, `simple` for `kg` - Postgres has no Kyrgyz
+  dictionary) and on `translations.text` (using `english`).
+- `src/kalys/embed.py`: embeds every language's current-edition articles and loads
+  them into `embeddings`. `src/kalys/search.py`: for a question, runs keyword search
+  and vector search **in all three languages** (6 ranked lists total), merges them
+  with Reciprocal Rank Fusion (RRF), and prints the top results with a citation
+  (act, article, edition date, title).
+
+**Why**
+- Keyword search alone misses a question that uses different words than the law does;
+  semantic search alone can rank a loosely related article above an exact match.
+  Combining both and merging with RRF gets the benefits of each.
+- A local embedding model avoids repeating Step 5's problem (a free-tier API too slow
+  for a bulk job) and needs no API key for this step - the paid key stays reserved for
+  the automated-translation pipeline planned in Step 5.
+- Searching all three languages for every question, instead of guessing the
+  question's language first and searching only that one, removes a failure mode
+  entirely - see below for the bug that first revealed it.
+
+**What we learned (the real story: two attempts, not one)**
+- *Attempt 1*: embed only the English translation, let a multilingual model match a
+  Kyrgyz or Russian question to it cross-lingually. Worked well for Russian and
+  English (exact matches ranked 1st) but weak for Kyrgyz (the right article found,
+  but only 8th, not 1st) - the model is clearly better at Russian/English than at a
+  lower-resource language like Kyrgyz.
+- *Attempt 2*: embed the Kyrgyz and Russian originals too (not just English), detect
+  the question's language from its letters, and search only that language's
+  embeddings and keyword index - the fix we planned. It needed a language guess:
+  "kg" if the text has one of Kyrgyz's three letters not used in Russian (ң, ө, ү),
+  else "ru" if it has any Cyrillic letter, else "en".
+- Testing this against real data found a worse bug than the one we were fixing: a
+  short Kyrgyz phrase that happens to use none of those three letters (e.g. "Зарыл
+  коргонуу", the Kyrgyz words for "necessary defense") got misread as Russian. Before,
+  that only cost some match quality (comparing cross-lingually against English
+  embeddings regardless of the guess); now that embeddings are split by language, a
+  wrong guess sent the *whole* search to the wrong language's embeddings and the
+  correct article did not appear in the results at all - confirmed by querying
+  `keyword_search`/`vector_search` directly and finding the right article ranked
+  highly in `kg`, but the pipeline had picked `ru`.
+- Fix: drop the language guess. Search all three languages for every question (6
+  ranked lists: keyword + vector, times en/ru/kg) and let RRF merge them. A question's
+  real language naturally wins - its matches are strong across the board, while the
+  other two languages contribute weak, scattered noise - without ever having to bet
+  everything on one guess. Re-tested: the Kyrgyz title query that completely failed
+  under attempt 2 now ranks the correct article 1st.
+- Swapping a Docker image for one that adds a Postgres extension does not lose data:
+  the named volume (`pgdata`) is untouched by `docker compose up -d`, since only the
+  container (not the volume) is recreated. Only the image needs to match the same
+  Postgres major version.
+- A fresh pull of a newer base image can report a "collation version mismatch" warning
+  (different glibc version baked into the image). Postgres's own fix -
+  `ALTER DATABASE ... REFRESH COLLATION VERSION` - cleared it; this matters because a
+  stale collation version can make index lookups silently wrong on sorted text.
+- psycopg3 has no built-in pgvector type: the simplest fix (no extra adapter package)
+  is to format a Python list of floats as `"[0.1,0.2,...]"` text and cast it with
+  `%s::vector` in the SQL, both for storing and for querying.
+- Reciprocal Rank Fusion math: with k=60 (used here), an item ranked 2nd in two lists
+  will always outscore an item ranked 1st in only one list; only a large gap between
+  ranks (e.g. 1st vs. 5th) lets the single-list top item win, and only for a small k.
+  Confirmed by hand before trusting it in `reciprocal_rank_fusion`'s tests.
+
+**Interview questions**
+- *What is hybrid search, and why not just use embeddings?* Keyword search is exact
+  and explainable (it matches the words asked); semantic search finds meaning-based
+  matches keyword search misses. Legal text has exact terms that matter (e.g. "necessary
+  defense"), so dropping keyword search would lose precision; dropping semantic search
+  would lose questions phrased differently from the law's own wording.
+- *Why search all three languages instead of detecting the question's language first?*
+  A detector that is only "pretty good" turns one wrong guess into total failure once
+  each language has its own embeddings to search - we saw this happen on a real
+  example. Searching every language and merging the rankings removes that single
+  point of failure: a wrong-language result is just noise that loses the RRF merge,
+  not a search that returns nothing relevant.
+- *What is Reciprocal Rank Fusion, in one sentence?* Give each item a score of
+  `1 / (k + its rank)` in every list it appears in, add the scores up, and re-sort -
+  so agreement between search methods counts for more than either one's raw score.
+- *Why a local embedding model instead of an API (e.g. Bedrock, OpenAI)?* No per-call
+  cost, no rate limit, no API key to manage, and Step 5 already showed a free-tier API
+  can be too slow for a one-time bulk job of this size. The trade-off is lower quality
+  than a top commercial embedding model, and no option to easily swap models without
+  re-running the whole embedding job.
+- *Why generate the `tsvector` column instead of computing it at query time?* A
+  `GENERATED ... STORED` column is computed once, when the row is written, and can be
+  indexed (GIN); computing `to_tsvector()` fresh in every query's `WHERE` clause would
+  make Postgres recompute it for every row on every search, with no index to use.
+- *What would you tell a teammate who wants to add a "smarter" step (language
+  detection, query rewriting, etc.) to a pipeline?* Test it against real data before
+  trusting it, specifically looking for the failure case where it is *confidently
+  wrong* - a classifier that is wrong 10% of the time is fine if being wrong just
+  costs some quality, and dangerous if being wrong breaks the result completely.
+
