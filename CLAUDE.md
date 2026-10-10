@@ -35,12 +35,24 @@
 
 ## Never
 - Never commit secrets, `.env`, or downloaded data (`data/` is git-ignored).
-- No DNS or AWS work until the owner asks. (Later: Route 53 hosted zone for
+- No DNS or AWS deploy work until the owner asks. (Later: Route 53 hosted zone for
   `kalys.eraliev.com`, delegated with NS records from the current DNS provider.)
+  Note: the owner has asked for AWS Bedrock specifically (Step 7, answer
+  generation) - this rule still applies to DNS and deploying the app to AWS.
+
+## AWS setup (for Bedrock, Step 7)
+- IAM user `kalysdev`, programmatic access only, least-privilege policy (just
+  `bedrock:InvokeModel`, `InvokeModelWithResponseStream`, `ListFoundationModels`,
+  `GetFoundationModel`). Credentials in `~/.aws/credentials` (outside the repo,
+  mode 600), used via `AWS_PROFILE=kalys` in `.env` - never the account's default
+  profile or root credentials.
+- Model: `us.anthropic.claude-sonnet-4-5-20250929-v1:0` in `us-east-1` (a
+  cross-region inference profile ID, not the bare model ID - see LEARNING.md).
+  The newest "Claude 5" family models are not yet granted for this account.
 
 ## Later phases (not now)
-Bedrock answers, web UI (English default, sample questions), AWS deploy, rate limiting
-+ cost cap, monitoring, dashboard.
+Web UI (English default, sample questions), AWS deploy, rate limiting + cost cap,
+monitoring, dashboard.
 More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
 
 ## Current status (update after each step)
@@ -85,4 +97,15 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   question and break the search for it completely, see `LEARNING.md`) and merges the
   6 ranked lists with RRF. Tested in all 3 languages: exact matches rank 1st for
   English, Russian, and Kyrgyz. See the Step 6 entry in `LEARNING.md`.
-- Stopped after Step 6. No AWS work done.
+- Step 7 (answer a question with AWS Bedrock, grounded in hybrid-search results,
+  with exact citations): done. Set up a least-privilege IAM user for Bedrock (see
+  "AWS setup" above). `src/kalys/answer.py`: `uv run python -m kalys.answer
+  "<question>"` runs hybrid search, builds a prompt from the top results' English
+  translations, and asks Claude (via Bedrock) to answer only from that text, with
+  inline citations, in the question's own language. Tested for real in all 3
+  languages: grounded, correctly cited, full answers (after raising `max_tokens`
+  from 1024 to 4096 - the first test answers were cut off mid-sentence). See the
+  Step 7 entry in `LEARNING.md` for the Bedrock access debugging (model access vs.
+  IAM vs. inference profiles vs. the Anthropic use-case form - 3 different gates).
+- Stopped after Step 7. No AWS deploy or DNS work done - only the Bedrock API
+  access needed for Step 7.

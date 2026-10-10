@@ -339,3 +339,92 @@ Short notes after each step: what we built, why, and what an interviewer might a
   wrong* - a classifier that is wrong 10% of the time is fine if being wrong just
   costs some quality, and dangerous if being wrong breaks the result completely.
 
+## Step 7: answering with AWS Bedrock
+
+**What we built**
+- An IAM user (`kalysdev`) for programmatic access only - no console login, no root
+  credentials used for anything but creating the user itself. Access key stored only
+  in `~/.aws/credentials` (outside the repo, file permissions fixed to `600`), used
+  via a named profile (`--profile kalys` / `AWS_PROFILE=kalys` in `.env`), never the
+  account's `default` profile.
+- A least-privilege IAM policy: just `bedrock:InvokeModel`,
+  `bedrock:InvokeModelWithResponseStream`, `bedrock:ListFoundationModels`, and
+  `bedrock:GetFoundationModel` - no broad managed policy like
+  `AmazonBedrockFullAccess`.
+- `src/kalys/answer.py`: given a question, runs `hybrid_search`, fetches the English
+  translation + citation for each result, builds a prompt, and asks a Claude model
+  through Bedrock to answer only from that text, with exact citations, in the
+  question's own language. `BedrockClient` wraps `boto3`'s `invoke_model`, with the
+  same retry-on-throttling pattern as Step 5's `GeminiTranslator`.
+- `uv run python -m kalys.answer "<question>"` - tested for real in all 3 languages.
+
+**Why**
+- Grounding the answer in the actual retrieved article text (never "from the
+  model's own knowledge") and requiring inline citations matches `CLAUDE.md`'s core
+  promise: exact citations, not just a plausible-sounding answer.
+- A least-privilege IAM policy (only the specific Bedrock actions needed, not a
+  managed full-access policy) is standard cloud-security practice and good interview
+  material for a Cloud Support/Data-focused resume.
+- Giving the model only the English translation text (not separate ru/kg text per
+  article) keeps the prompt-building code simple and uses articles that always have
+  a translation (Step 5 translated every current-edition article); the model is
+  strong enough to translate that English text into Russian or Kyrgyz itself when
+  answering, while still citing the exact article number and date.
+
+**What we learned**
+- AWS Bedrock has an extra access gate beyond IAM: per-model **model access**,
+  granted separately in the Bedrock console (or now, automatically on first use -
+  the standalone "Model access" page was retired mid-project; see below). An
+  `AccessDeniedException` saying a model "is not available for this account" means
+  this gate, not a broken IAM policy - confirmed by first getting exactly that error
+  with full `InvokeModel` permission already granted.
+- Newer Claude models on Bedrock require a **cross-region inference profile ID**
+  (`us.anthropic.<model-id>`), not the bare model ID, for `InvokeModel` - the bare ID
+  gives a confusing `ValidationException` ("on-demand throughput isn't supported").
+  Worth knowing before assuming a model-access problem.
+- Anthropic models specifically also need a one-time **"use case details" form**
+  submitted for the AWS account, separate from IAM and from per-model access. This
+  was not obvious from the (now-retired) Model access page, which only showed a
+  general notice about it; what actually triggered the form appearing was opening a
+  Claude model in the Bedrock **Playground** and sending a real message there. Before
+  submitting it, the exact same `InvokeModel` call that had worked minutes earlier
+  (verified by re-running it) started failing with a `ResourceNotFoundException`
+  pointing at the form - a reminder that "it worked once" does not mean "it will keep
+  working" when a cloud provider's account-level state can change between calls.
+- The default `max_tokens` we picked (1024, copied from a quick first test) was too
+  small for a real answer with several citations in Russian or Kyrgyz - both test
+  answers were cut off mid-sentence, including before the required "Machine
+  translation. Not an official text." line. Caught by reading the actual output, not
+  by any automated check; raised to 4096 (matching Step 5's translation budget) and
+  re-tested to confirm a full, clean answer.
+- Testing an LLM API wrapper without hitting the real API: fake the SDK's client
+  object (here, a fake with an `invoke_model(modelId, body)` method returning a
+  dict shaped like Bedrock's real response, including a `.read()`-able `body`) rather
+  than mocking our own `BedrockClient` class - this is the same pattern as Step 5's
+  `FakeGeminiClient`, and it means the test also exercises our real JSON
+  parsing and retry logic, not just that the fake was called.
+
+**Interview questions**
+- *Why a least-privilege IAM policy instead of `AmazonBedrockFullAccess`?* The code
+  only ever calls `InvokeModel` and (for diagnostics) `ListFoundationModels` - a
+  broader policy would grant the ability to do things the project never needs, like
+  changing account-wide model access settings, which is both an unnecessary risk and
+  harder to justify in a security review.
+- *What is RAG, and where does the "grounding" actually happen in this code?* The
+  question is first used to retrieve relevant source text (`hybrid_search`), then
+  that text - not the question alone - is put into the prompt, with an explicit
+  instruction to answer only from it. The citations work because the model is
+  shown the real citation string for each article and told to reuse it exactly,
+  not asked to recall one from training data.
+- *What happens if hybrid search finds nothing relevant?* `answer()` checks for an
+  empty context list and returns a fixed message instead of calling the model at all
+  - this avoids a confidently-worded but ungrounded answer, and avoids paying for a
+  model call that cannot be grounded in anything.
+- *How would you debug "AccessDeniedException: model not available" vs. a real IAM
+  problem?* Check whether the IAM policy already allows the action attempted (here,
+  `InvokeModel`) - if it does, and the error is specifically about the model, it is
+  Bedrock's separate per-model access gate, not an IAM misconfiguration. Two
+  different error types (`AccessDeniedException` vs. `ValidationException` about
+  inference profiles) pointed at two different causes during this debugging.
+
+

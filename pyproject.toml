@@ -12,6 +12,7 @@ dependencies = [
     "google-genai>=2.29.0",
     "python-dotenv>=1.2.4",
     "sentence-transformers>=6.1.0",
+    "boto3>=1.43.111",
 ]
 
 [dependency-groups]
