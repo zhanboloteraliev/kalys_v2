@@ -51,8 +51,7 @@
   The newest "Claude 5" family models are not yet granted for this account.
 
 ## Later phases (not now)
-Web UI (English default, sample questions), AWS deploy, rate limiting + cost cap,
-monitoring, dashboard.
+AWS deploy, rate limiting + cost cap, monitoring, dashboard.
 More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
 
 ## Current status (update after each step)
@@ -107,5 +106,31 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   from 1024 to 4096 - the first test answers were cut off mid-sentence). See the
   Step 7 entry in `LEARNING.md` for the Bedrock access debugging (model access vs.
   IAM vs. inference profiles vs. the Anthropic use-case form - 3 different gates).
-- Stopped after Step 7. No AWS deploy or DNS work done - only the Bedrock API
-  access needed for Step 7.
+- Step 8 (web UI: a chat interface with Chainlit, English default, sample
+  questions, streamed answers): done. `src/kalys/web.py` wires the Step 7
+  pipeline to a chat window; `uv run chainlit run src/kalys/web.py -w` to run
+  it. Pure-black theme (`public/kalys.css` + `.chainlit/config.toml`), 3
+  clickable starter questions, and real token-by-token streaming (new
+  `BedrockClient.ask_stream()`, not a fake animation). Fixed two real bugs
+  found by testing, not just reading the code: one starter question's exact
+  wording failed to retrieve the obviously-relevant article (fixed by
+  shortening it - see `LEARNING.md`), and a plain greeting ("hi") was wrongly
+  refused with "the articles found do not cover this" (fixed in the system
+  prompt). See the Step 8 entry in `LEARNING.md` for the black-theme
+  debugging story.
+- Step 9 (rewrite the system prompt so the chat answers like a conversation):
+  done. Prompt-only change in `src/kalys/answer.py`, plus three practical
+  starter questions in `web.py`. The old prompt refused questions the search
+  had already answered: a real question ("what to do when cops stopped me")
+  was classified as small talk and all five retrieved articles were discarded.
+  Removed the greeting-vs-legal-question split and the hard-coded refusal
+  sentence; the model now starts from what the articles do say, answers part of
+  a question when that is all it has, and ends with a follow-up question.
+  Testing in all 3 languages found that the friendlier wording made it drop the
+  conditions attached to legal rules (it gave the 48-hour limit for wanted
+  persons as the general rule, which is 45 hours), so the prompt now has
+  explicit rules about conditions and about checking numbers, deadlines and
+  ages against the article's own words. Kyrgyz followed the instructions worst
+  of the three languages. See the Step 9 entry in `LEARNING.md`.
+- Stopped after Step 9. No AWS deploy or DNS work done - only the Bedrock API
+  access needed for Step 7; the web UI runs locally.

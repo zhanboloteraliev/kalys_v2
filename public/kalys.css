@@ -1,0 +1,29 @@
+/* Kalys: pure black theme, overriding Chainlit's default dark gray.
+   Chainlit's dark mode uses shadcn/ui-style HSL custom properties (format:
+   "<hue> <saturation>% <lightness>%"), set on .dark in its own stylesheet.
+   We only change lightness, keeping 0% hue/saturation for a neutral black,
+   and keep a very small amount of lightness on cards/inputs/popovers
+   (the "elevated" surfaces) so message bubbles and the input box are still
+   visible against the page - a fully flat 0% everywhere would make those
+   boundaries disappear.
+
+   `html.dark` (not just `.dark`) is used so this is more specific than
+   Chainlit's own rule, in case Chainlit's CSS is inside a cascade layer
+   that would otherwise make plain !important ordering unreliable. The
+   background-color rules below are a second, belt-and-suspenders fallback
+   that does not depend on the variable being read correctly at all. */
+html.dark {
+  --background: 0 0% 0% !important;
+  --sidebar-background: 0 0% 0% !important;
+  --card: 0 0% 5% !important;
+  --popover: 0 0% 5% !important;
+  --muted: 0 0% 8% !important;
+  --border: 0 0% 12% !important;
+  --input: 0 0% 12% !important;
+}
+
+html.dark,
+html.dark body,
+html.dark #root {
+  background-color: #000 !important;
+}

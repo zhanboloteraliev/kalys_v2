@@ -24,6 +24,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -47,20 +48,67 @@ SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 TOP_N = 5
 
-SYSTEM_PROMPT = (
-    "You are a legal-search assistant for the law of the Kyrgyz Republic. Answer "
-    "only using the articles given to you below the question - never from your own "
-    "knowledge of the law, and never add anything the given articles do not "
-    'support. If the given articles do not answer the question, say so plainly ("the '
-    'articles found do not cover this") instead of guessing.\n'
-    "Answer in the same language as the question (English, Russian, or Kyrgyz). "
-    "After every statement, cite the article it comes from in parentheses, in this "
-    "exact form: (<act name>, Article <number>, edition <date>).\n"
-    "The article text given to you is always in English, machine-translated from "
-    "the Russian original. If you answer in Russian or Kyrgyz, translate the "
-    "relevant parts yourself; either way, end your answer with this line by itself: "
-    '"Machine translation. Not an official text."'
-)
+SYSTEM_PROMPT = """You are Kalys, a legal-search assistant for the law of the
+Kyrgyz Republic. You have the Constitution, the Criminal Code, and the Criminal
+Procedure Code. Under each question you are given the articles a search found
+for it.
+
+How to answer:
+- Write for someone who is not a lawyer: plain words, short paragraphs, the
+  practical point first. A real conversation, not a legal brief.
+- Most questions come from a real situation ("the police stopped me"), not from
+  a legal term. Work out which of the given articles bear on that situation and
+  answer from them.
+- Begin with what the articles DO tell this person. Never open with what is
+  missing, and never list the articles you did not use.
+- Everything you say about the law must come from the articles below, never from
+  your own knowledge of Kyrgyz law. This is the one rule that has no exception.
+- Legal rules nearly always carry a condition, and an article often gives
+  different figures for different situations. Keep each condition attached to
+  the rule it governs, and never present an exception as the general rule. Where
+  an article gives two figures, say which situation each one belongs to instead
+  of choosing one. Never merge two provisions into a single rule, and never
+  attach a figure to a rule it does not belong to. Being plain must not cost the
+  reader the condition.
+- Be especially careful with numbers, deadlines and ages. Before you state one,
+  find the exact words for it in the article and keep its condition. Do not
+  assume a figure that is common in other countries (a 48-hour limit, an age of
+  16) - the only figure that counts is the one the given article states for the
+  situation asked about. If the article names no age, do not supply one.
+- Cite every point you take from an article, like this: (<act name>, Article
+  <number>, edition <date>). One citation per point is enough - you do not need
+  one after every sentence.
+- If the articles answer only part of the question, answer that part, then say
+  in one short sentence what you could not find. If they answer none of it, say
+  briefly what the articles you did get are about, and suggest a way to ask that
+  would search better. Use your own words; there is no fixed phrase for this.
+- Close with one short follow-up question: the thing you would need to know to
+  be more precise, or the obvious next point to look up.
+- Questions that are not about law (what a word means, how to put a question,
+  what you can do) you may answer normally, with no citations.
+
+Language and labelling:
+- Answer in the language of the question (English, Russian, or Kyrgyz). The
+  articles are always in English, machine-translated from the Russian original,
+  so translate the parts you use yourself.
+- Whenever your answer states what the law says, put this line at the very
+  end, after your follow-up question, alone on its own line:
+  "Machine translation. Not an official text."
+  Write it in English exactly as given, even when the rest of your answer is in
+  Russian or Kyrgyz. Never translate it and never add formatting to it.
+- A greeting or small talk needs no citations and no label. Reply warmly and
+  briefly, and say what you can look up."""
+
+
+RETRYABLE_ERROR_CODES = {
+    # Bedrock throttles (and occasionally has a transient service error)
+    # under load; both are worth retrying, unlike a 4xx like "bad request"
+    # or "model not found".
+    "ThrottlingException",
+    "ServiceUnavailableException",
+    "ModelTimeoutException",
+    "InternalServerException",
+}
 
 
 @dataclass(frozen=True)
@@ -71,16 +119,18 @@ class ArticleContext:
 
 
 class BedrockClient:
-    """Wraps the Bedrock Runtime InvokeModel API for a Claude model. Tests use
-    a fake with the same `ask` method, or a fake boto3 client via `client=`."""
+    """Wraps the Bedrock Runtime API for a Claude model: `ask` for one full
+    answer, `ask_stream` for the same answer delivered in pieces as the
+    model generates them (used by the chat web UI's "typing" effect). Tests
+    use a fake with the same methods, or a fake boto3 client via `client=`."""
 
     def __init__(self, client=None, model: str = BEDROCK_MODEL_ID, sleep=time.sleep):
         self.client = client or boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
         self.model = model
         self.sleep = sleep  # a parameter so tests can run without real waiting
 
-    def ask(self, prompt: str) -> str:
-        body = json.dumps(
+    def _request_body(self, prompt: str) -> str:
+        return json.dumps(
             {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": BEDROCK_MAX_ANSWER_TOKENS,
@@ -88,26 +138,48 @@ class BedrockClient:
                 "messages": [{"role": "user", "content": prompt}],
             }
         )
+
+    def ask(self, prompt: str) -> str:
+        body = self._request_body(prompt)
         for attempt in range(BEDROCK_MAX_RETRIES + 1):
             try:
                 response = self.client.invoke_model(modelId=self.model, body=body)
                 payload = json.loads(response["body"].read())
                 return payload["content"][0]["text"]
             except ClientError as error:
-                # Bedrock throttles (and occasionally has a transient service
-                # error) under load; both are worth retrying, unlike a 4xx
-                # like "bad request" or "model not found".
                 code = error.response.get("Error", {}).get("Code")
-                is_retryable = code in {
-                    "ThrottlingException",
-                    "ServiceUnavailableException",
-                    "ModelTimeoutException",
-                    "InternalServerException",
-                }
-                if not is_retryable or attempt == BEDROCK_MAX_RETRIES:
+                if code not in RETRYABLE_ERROR_CODES or attempt == BEDROCK_MAX_RETRIES:
                     raise
                 self.sleep(2 ** (attempt + 2))
         raise RuntimeError("unreachable")
+
+    def ask_stream(self, prompt: str) -> Iterator[str]:
+        """Like `ask`, but yields the answer in small pieces as the model
+        generates them. Only the initial request is retried on a throttling
+        error; once pieces have started arriving, an error is left to
+        propagate rather than silently restarting a partially shown answer."""
+        body = self._request_body(prompt)
+        response = None
+        for attempt in range(BEDROCK_MAX_RETRIES + 1):
+            try:
+                response = self.client.invoke_model_with_response_stream(
+                    modelId=self.model, body=body
+                )
+                break
+            except ClientError as error:
+                code = error.response.get("Error", {}).get("Code")
+                if code not in RETRYABLE_ERROR_CODES or attempt == BEDROCK_MAX_RETRIES:
+                    raise
+                self.sleep(2 ** (attempt + 2))
+        if response is None:
+            raise RuntimeError("unreachable")
+
+        for event in response["body"]:
+            chunk = json.loads(event["chunk"]["bytes"])
+            if chunk.get("type") == "content_block_delta":
+                delta = chunk["delta"].get("text", "")
+                if delta:
+                    yield delta
 
 
 def build_prompt(question: str, contexts: list[ArticleContext]) -> str:
@@ -136,9 +208,13 @@ def fetch_context(conn, edition_id: int, number: str) -> ArticleContext | None:
     return ArticleContext(citation=citation, title=title, text=text)
 
 
-def answer(conn, embedder, bedrock, question: str, limit: int = TOP_N) -> str:
+def gather_contexts(conn, embedder, question: str, limit: int = TOP_N) -> list[ArticleContext]:
     hits = hybrid_search(conn, embedder, question, limit=limit)
-    contexts = [c for c in (fetch_context(conn, e, n) for e, n in hits) if c is not None]
+    return [c for c in (fetch_context(conn, e, n) for e, n in hits) if c is not None]
+
+
+def answer(conn, embedder, bedrock, question: str, limit: int = TOP_N) -> str:
+    contexts = gather_contexts(conn, embedder, question, limit)
     if not contexts:
         return "No matching articles were found for this question."
     return bedrock.ask(build_prompt(question, contexts))

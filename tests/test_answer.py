@@ -94,3 +94,59 @@ def test_bedrock_client_does_not_retry_other_errors():
 
     with pytest.raises(ClientError):
         bedrock.ask("a question")
+
+
+class FakeBedrockStreamClient:
+    """A fake boto3 bedrock-runtime client for the streaming call: fails a
+    few times on the initial request, then returns a fixed list of events
+    shaped like Bedrock's real streaming response for a Claude model."""
+
+    def __init__(self, failures_before_success: int, error_code: str = "ThrottlingException"):
+        self.failures_before_success = failures_before_success
+        self.error_code = error_code
+        self.calls = 0
+
+    def invoke_model_with_response_stream(self, modelId: str, body: str):
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise make_client_error(self.error_code)
+
+        def chunk(payload: dict) -> dict:
+            return {"chunk": {"bytes": json.dumps(payload).encode("utf-8")}}
+
+        events = [
+            chunk({"type": "message_start"}),
+            chunk({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hel"}}),
+            chunk({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "lo"}}),
+            chunk({"type": "message_stop"}),
+        ]
+        return {"body": events}
+
+
+def test_bedrock_client_streams_the_answer_in_pieces():
+    client = FakeBedrockStreamClient(failures_before_success=0)
+    bedrock = BedrockClient(client=client, model="fake-model", sleep=FakeClock().sleep)
+
+    pieces = list(bedrock.ask_stream("a question"))
+
+    assert pieces == ["Hel", "lo"]  # non-delta events (message_start/stop) are skipped
+
+
+def test_bedrock_client_stream_retries_on_throttling_before_streaming_starts():
+    client = FakeBedrockStreamClient(failures_before_success=2, error_code="ThrottlingException")
+    clock = FakeClock()
+    bedrock = BedrockClient(client=client, model="fake-model", sleep=clock.sleep)
+
+    pieces = list(bedrock.ask_stream("a question"))
+
+    assert "".join(pieces) == "Hello"
+    assert client.calls == 3
+    assert clock.sleeps == [4, 8]
+
+
+def test_bedrock_client_stream_does_not_retry_other_errors():
+    client = FakeBedrockStreamClient(failures_before_success=1, error_code="ValidationException")
+    bedrock = BedrockClient(client=client, model="fake-model", sleep=FakeClock().sleep)
+
+    with pytest.raises(ClientError):
+        list(bedrock.ask_stream("a question"))

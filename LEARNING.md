@@ -427,4 +427,187 @@ Short notes after each step: what we built, why, and what an interviewer might a
   different error types (`AccessDeniedException` vs. `ValidationException` about
   inference profiles) pointed at two different causes during this debugging.
 
+## Step 8: the chat web UI (Chainlit)
 
+**What we built**
+- `src/kalys/web.py`: a Chainlit app wiring `kalys.answer`'s pipeline (hybrid search
+  -> article context -> Bedrock) to a chat window. Three clickable sample questions
+  (`cl.set_starters`) per `CLAUDE.md`'s "English default, sample questions" rule.
+  The embedding model and Bedrock client load once, when the module is first
+  imported (Chainlit keeps one process running), not on every message.
+- `BedrockClient.ask_stream()` (new, alongside the existing `ask()`): calls
+  Bedrock's `invoke_model_with_response_stream` and yields the answer in small
+  pieces as the model generates them, so the UI can show it appearing gradually
+  (`msg.stream_token()` per piece) instead of waiting for the whole answer and
+  showing it all at once.
+- A pure-black theme (`public/kalys.css`, loaded via `.chainlit/config.toml`'s
+  `custom_css`), overriding Chainlit's default dark gray.
+- Strengthened `SYSTEM_PROMPT` so a greeting or small talk ("hi") gets a normal,
+  brief reply instead of being forced through the "answer only from the given
+  articles" rule and refusing with "the articles found do not cover this."
+
+**Why**
+- A Python-native chat framework (Chainlit) instead of hand-building a React
+  frontend keeps the whole project in one language/stack - simpler to build,
+  simpler to explain in an interview, and its built-in streaming and starter-question
+  features map directly onto `CLAUDE.md`'s UI requirements.
+- Real token streaming (not a fake "reveal the finished text slowly" animation)
+  reuses the same Bedrock call either way, costs nothing extra, and is more
+  honest - the UI reflects when the model is actually still generating.
+- Fixing the greeting case in the system prompt (not a separate
+  greeting-or-not classifier before retrieval) follows the same lesson as Step 6:
+  a bolt-on classifier that is wrong sometimes is a new way for the whole
+  pipeline to fail; a single model call that already sees the full context can
+  judge "is this a greeting" itself, with nothing extra to get wrong.
+
+**What we learned**
+- Chainlit's dark mode uses shadcn/ui-style HSL CSS custom properties
+  (`--background: <hue> <saturation>% <lightness>%`) set on an `html.dark` class.
+  Overriding just `--background` to `0 0% 0%` was not enough: some wrapper
+  elements' visible color did not trace back to any CSS rule we could find via
+  `document.styleSheets` at all (checked by walking every matching selector by
+  hand, including comma-separated selector lists, and checking `::before`/
+  `::after` pseudo-elements) - a reminder that not every color on a page comes
+  from a rule you can find by reading the stylesheet, especially in an app
+  mixing more than one UI library (Tailwind/shadcn and legacy MUI/Emotion
+  components, in Chainlit's case). A blunt, direct `background-color: #000
+  !important` on `html`, `body`, and `#root` fixed it regardless of the cause.
+- A browser-automation screenshot tool can show a visibly different color than
+  what every DOM/CSSOM check agrees is actually rendered (`getComputedStyle`,
+  matched-rule inspection, pseudo-element checks all said black; the tool's
+  screenshot still showed gray). Asking the owner to check the real browser
+  directly settled it - automated verification has its own failure modes, and a
+  human looking at the actual page is sometimes the only trustworthy check left.
+- Chainlit does not auto-reload on code changes unless started with `-w`; a
+  plain `chainlit run` needs a manual restart to pick up an edited `.py` file
+  (config/CSS changes, served as static files, do not need a restart - but we
+  hit a stale-browser-cache scare there too before realizing the server itself
+  just needed restarting for the Python-side fix).
+- Tried a question for each of the 3 starter buttons against the live pipeline
+  before trusting them: "What is necessary defense under Kyrgyz law?" failed
+  to retrieve Criminal Code Article 46 in the top 5 results at all, while the
+  shorter "What is necessary defense?" ranked it 1st. The extra, redundant
+  phrase ("under Kyrgyz law" - everything in this tool already is Kyrgyz law)
+  was enough noise to push the right article out of the results. Worth
+  remembering for Step 9 (if a public user's question underperforms, a shorter,
+  more direct rephrasing is worth trying before assuming retrieval is broken).
+- Chainlit's default auto-generated `.chainlit/translations/` directory (UI
+  strings in dozens of languages we never touch) does not belong in git -
+  excluded it, kept only our own `config.toml` customization.
+
+**Interview questions**
+- *Real token streaming vs. a fake "typewriter" animation on a complete string -
+  what is the actual difference, and why does it matter here?* Real streaming
+  shows the user output as soon as the model produces it, so perceived latency
+  drops (first text appears in under a second instead of after the full
+  generation finishes); a fake animation still waits for the complete response
+  first and only adds a cosmetic delay on top - slower, not faster, and the
+  code must explicitly say that is what it is doing, which is a harder thing to
+  defend in a review.
+- *Why wasn't a separate "is this a greeting" classifier added before the
+  "hi" bug was found?* It wasn't needed - the model already receives the full
+  question and context in one call, so a prompt instruction letting it handle
+  both cases itself avoids a second classification step that could itself be
+  wrong, echoing the Step 6 decision to drop a language-detection step for the
+  same reason.
+- *How do you debug "the CSS says X but the page shows Y"?* Check the computed
+  style (not just the source CSS) to rule out another rule beating yours; check
+  for pseudo-elements and other overlapping elements it could be painting
+  instead of inheritable `background-color`; and when every automated check
+  agrees but the visual result still looks wrong, get a human to look at the
+  real thing - tooling itself can be the broken link in the chain.
+- *Why keep the embedding model and Bedrock client as module-level singletons
+  in `web.py` instead of creating them per message?* Loading the local
+  sentence-transformers model takes a few seconds; doing that on every chat
+  message would make each question slow for no reason, since the model itself
+  does not change between messages.
+
+
+
+## Step 9: rewriting the system prompt so it answers like a conversation
+
+### What we built
+No new code - only `SYSTEM_PROMPT` in `src/kalys/answer.py` (and three new
+starter questions in `web.py`). The old prompt refused too easily: it answered
+"the articles found do not cover this" even when the search had found articles
+that did cover most of the question.
+
+### Why
+The complaint was that the chat felt useless to a normal person. Testing showed
+two separate failures, both caused by the prompt, not by the search:
+
+- "what to do when cops stopped me" found five good articles about detention and
+  used **none** of them. The prompt made the model choose between "a greeting or
+  small talk" and "an actual legal question", and this fell into the greeting
+  branch.
+- "can police search my phone?" opened with a refusal and then listed the
+  articles it had decided not to use, even though two of them were on point.
+
+Five things in the old prompt caused this:
+
+1. A **binary classifier was written into the prompt** (greeting vs. legal
+   question). Real questions sit between those two.
+2. The refusal was handed to the model as a **literal string**, so it reached
+   for that exact phrase and returned it word for word.
+3. It was written **almost entirely as prohibitions** ("never", "never",
+   "instead of guessing") and said nothing about how to be useful.
+4. There was **no partial-answer path**, so a mostly-covered question got a
+   refusal rather than most of an answer.
+5. "Cite after **every statement**" produced a legal brief instead of a reply.
+
+The new prompt drops the classifier, states the grounding rule once as the rule
+with no exception, tells the model to begin with what the articles do say, lets
+it answer part of a question and name the gap in one sentence, and asks it to
+end with a follow-up question.
+
+### What we learned
+- **Making a grounded assistant friendlier makes it less accurate, and you have
+  to test for that.** Asking for "plain words, the practical point first" is an
+  instruction to flatten things, and legal rules are full of conditions. The
+  Russian answer took the 48-hour limit that applies only to a person already
+  declared wanted and presented it as the general rule; the real general rule in
+  Article 97 part 5 is 45 hours. Nothing was invented - the number was in the
+  article - but the condition that governs it was dropped, which in legal text
+  is the more dangerous mistake, because the answer still looks right. Two extra
+  rules fixed it: keep every condition attached to the rule it governs, and
+  check the article's own words before stating any number, deadline or age.
+- **Instruction-following gets measurably worse in the lowest-resource
+  language.** The same prompt that behaved in English and Russian still drifted
+  in Kyrgyz: it produced the globally common "48 hours" figure and invented "for
+  children under sixteen" where the article just says "child". It also
+  translated the "Machine translation. Not an official text." label, which has
+  to stay in English. Testing in only one language would have hidden all of
+  this.
+- **Check a suspected hallucination against the source before calling it one.**
+  A 48-hour "charge or release" rule looked invented. It is real - Article 43
+  part 2 - and the model had simply attached it to the wrong article. The fix
+  for a mis-citation is different from the fix for a made-up fact, so guessing
+  which one you have wastes the effort.
+- **Giving a model an exact refusal phrase teaches it to refuse.** Removing the
+  quoted sentence and saying "use your own words" was enough to turn blank
+  refusals into useful replies that say what was found instead.
+
+### Interview questions
+- *Your assistant refused to answer questions it had the information for. How
+  did you work out whether the bug was in the search or in the prompt?* Run the
+  retrieval step on its own first. The search returned the right detention
+  articles ranked 1-5, so retrieval was fine and the prompt was discarding them;
+  that one check decides which half of a RAG system to debug and takes seconds.
+- *What is the risk of telling a RAG system to answer in plain, practical
+  language?* Plain language drops qualifiers, and in law the qualifier is often
+  the whole rule. The model stated a time limit that only applies to wanted
+  persons as if it were the general rule. The grounding rule ("only use the
+  given text") does not protect you here, because the wrong number really was in
+  the given text - you need a separate instruction to keep each figure with its
+  condition.
+- *Why not add a classifier to decide whether a question is a greeting or a
+  legal question?* That was tried in the prompt and was the direct cause of the
+  worst bug: a real question about being stopped by police was classified as
+  small talk and all five retrieved articles were thrown away. It is the same
+  lesson as dropping language detection in Step 6 - a guessing step added in
+  front of a pipeline can fail in a way that breaks everything behind it.
+- *How would you test a change to a prompt?* Fix a small set of questions that
+  cover the behaviours you care about - a practical question, a partly covered
+  question, an out-of-scope question, a greeting, and each supported language -
+  and run them before and after. The Kyrgyz failures only appeared because the
+  same question was asked in all three languages.
