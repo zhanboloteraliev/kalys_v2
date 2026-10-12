@@ -1,0 +1,23 @@
+# systemd unit for the Chainlit chat app. Install with deploy/setup.sh.
+#
+# Binds to 127.0.0.1 on purpose: the app is reached through an SSH tunnel, so
+# no port needs to be open to the internet and nobody can spend Bedrock money
+# by finding the instance's address.
+
+[Unit]
+Description=Kalys legal search chat (Chainlit)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/kalys_v2
+Environment=PATH=/home/ubuntu/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/ubuntu
+ExecStart=/home/ubuntu/.local/bin/uv run chainlit run src/kalys/web.py --host 127.0.0.1 --port 8000 --headless
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

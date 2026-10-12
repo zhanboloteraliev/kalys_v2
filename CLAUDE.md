@@ -35,10 +35,14 @@
 
 ## Never
 - Never commit secrets, `.env`, or downloaded data (`data/` is git-ignored).
-- No DNS or AWS deploy work until the owner asks. (Later: Route 53 hosted zone for
+- No DNS work until the owner asks. (Later: Route 53 hosted zone for
   `kalys.eraliev.com`, delegated with NS records from the current DNS provider.)
-  Note: the owner has asked for AWS Bedrock specifically (Step 7, answer
-  generation) - this rule still applies to DNS and deploying the app to AWS.
+  Note: the owner has asked for AWS Bedrock (Step 7) and for deploying to EC2
+  (Step 10) - this rule now applies to DNS only.
+- Never create, change, or delete AWS resources on the owner's behalf. The
+  `kalysdev` key is Bedrock-only by design and must stay that way; console
+  steps (instances, roles, security groups) are the owner's to run. See
+  `docs/deploy.md`.
 
 ## AWS setup (for Bedrock, Step 7)
 - IAM user `kalysdev`, programmatic access only, least-privilege policy (just
@@ -132,5 +136,17 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   explicit rules about conditions and about checking numbers, deadlines and
   ages against the article's own words. Kyrgyz followed the instructions worst
   of the three languages. See the Step 9 entry in `LEARNING.md`.
-- Stopped after Step 9. No AWS deploy or DNS work done - only the Bedrock API
-  access needed for Step 7; the web UI runs locally.
+- Step 10 (deploy to AWS): prepared, not yet run. One `t3.medium` EC2
+  instance in `us-east-1` runs everything: PostgreSQL in Docker, the Chainlit
+  app as a systemd service, and Bedrock through an IAM role attached to the
+  instance (never a copy of the access keys). `docs/deploy.md` is the runbook,
+  `deploy/setup.sh` bootstraps a fresh Ubuntu 24.04 instance, and
+  `deploy/kalys.service` is the systemd unit. Two decisions worth remembering:
+  the app binds to 127.0.0.1 and is reached over an SSH tunnel, so no port is
+  open to the internet (every question costs Bedrock money, so an open
+  endpoint is a way for strangers to spend it); and the database is moved up
+  as a 40 MB `pg_dump` rather than re-downloaded, because the source site
+  blocks cloud IPs with a 403 (Step 2). Also changed `docker-compose.yml` to
+  publish PostgreSQL on `127.0.0.1` instead of all interfaces.
+- The web UI still runs locally; the instance itself has not been created
+  yet. No DNS work done.

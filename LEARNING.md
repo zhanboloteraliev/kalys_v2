@@ -611,3 +611,69 @@ end with a follow-up question.
   question, an out-of-scope question, a greeting, and each supported language -
   and run them before and after. The Kyrgyz failures only appeared because the
   same question was asked in all three languages.
+
+## Step 10: preparing the AWS deployment
+
+### What we built
+`docs/deploy.md` (the runbook), `deploy/setup.sh` (bootstraps a fresh Ubuntu
+24.04 instance), `deploy/kalys.service` (systemd unit), and `.env.example`.
+One `t3.medium` in `us-east-1` runs everything: PostgreSQL in Docker, the
+Chainlit app as a service, and Bedrock through an IAM role on the instance.
+
+### Why
+The goal was to stop babysitting a local server and be able to test the chat
+from anywhere. A single instance running the same Docker Compose database as
+the laptop is the smallest step that achieves that, and it can be stopped when
+not in use, which is what keeps the cost near zero.
+
+### What we learned
+- **An LLM endpoint is a money leak, so "who can reach it" is a cost question,
+  not only a security question.** Every question costs about $0.03-0.05 of
+  Bedrock. A public port 8000 lets any passer-by or port-scanning bot spend
+  that. The app binds to 127.0.0.1 and is reached over an SSH tunnel
+  (`ssh -L 8000:localhost:8000`), so nothing is open except SSH. That is
+  cheaper and simpler than adding a login and a spend cap just to test.
+- **A server should never hold a copy of your access keys.** An IAM role
+  attached to the instance hands it short-lived credentials, and boto3 picks
+  them up with no code change at all. The instance's policy is also narrower
+  than the laptop's: the server only answers questions, so it gets
+  `InvokeModel` and `InvokeModelWithResponseStream` and not the two `List`/`Get`
+  actions used while exploring.
+- **`AWS_PROFILE` in `.env` is a trap when the same repo runs in two places.**
+  On the laptop it selects the `kalysdev` profile; on the server that profile
+  does not exist, so naming it would break every Bedrock call even though the
+  instance role is working perfectly. The server's `.env` therefore sets only
+  `AWS_REGION`. This is the kind of bug that looks like "Bedrock is broken".
+- **Compose was publishing PostgreSQL on every interface.** `"5432:5432"` binds
+  to `0.0.0.0`, which on a public instance means an internet-reachable database
+  whose password is `kalys`. Changed to `"127.0.0.1:5432:5432"`. The security
+  group would also have blocked it, but relying on one layer for that is a bad
+  trade when the fix costs nothing and changes nothing locally.
+- **The 403 from Step 2 shapes the whole deployment.** The source site blocks
+  cloud IPs, so the server can never download the law itself. The database has
+  to be moved up as a dump, which makes the laptop the permanent source of
+  truth and the server a replica. The full dump of all 91 editions compresses
+  to 40 MB, so there was no need to trim it to the current editions only - worth
+  measuring before designing around a size problem that does not exist.
+
+### Interview questions
+- *Why not put the app on Lambda and make it serverless?* The chat holds a
+  WebSocket open for streaming and keeps a 1 GB embedding model in memory.
+  Lambda would reload that model on every cold start and does not fit
+  long-lived WebSockets well. App Runner with Aurora Serverless v2 is the
+  realistic serverless version, but neither scales to zero cost, and both are
+  more setup for an app that is still changing daily.
+- *How does the application authenticate to Bedrock in production?* An IAM role
+  attached to the EC2 instance. boto3's credential chain finds the instance
+  metadata credentials automatically, so the same code works on the laptop
+  (named profile) and on the server (role) with no branch in the code and no
+  key material on the server.
+- *Why is the database loaded from a dump instead of being populated by the
+  ingest job?* The source site answers 403 to cloud IP addresses (Step 2), so
+  ingestion only works from the owner's laptop. That one external constraint
+  decides the architecture: the laptop ingests and translates, and the server
+  receives a `pg_dump`.
+- *What stops someone else from using your deployed app and spending your
+  money?* Nothing is listening on a public port - the app binds to localhost
+  and is reached through an SSH tunnel, with only port 22 open, to the owner's
+  IP. A public deployment would need a login and a Bedrock spend cap first.
