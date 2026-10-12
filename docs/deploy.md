@@ -53,6 +53,72 @@ change.
 2. IAM -> Roles -> Create role -> AWS service -> EC2, attach
    `KalysBedrockInvoke`, name it `KalysServerRole`.
 
+## 1b. Temporary EC2 policy on `kalysdev` (optional)
+
+Only needed if you want the assistant to create the key pair, security group,
+and instance for you instead of doing steps 2-3 in the console. Attach this to
+`kalysdev` as `KalysDeployTemporary`, and **detach it once the instance is
+running** - `kalysdev` should go back to Bedrock-only.
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "Lookups",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstanceTypes",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeKeyPairs"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "CreateAndRunInUsEast1Only",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateKeyPair",
+                "ec2:CreateSecurityGroup",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:CreateTags",
+                "ec2:RunInstances",
+                "ec2:StartInstances",
+                "ec2:StopInstances",
+                "ec2:AssociateIamInstanceProfile"
+            ],
+            "Resource": "*",
+            "Condition": {
+                "StringEquals": { "aws:RequestedRegion": "us-east-1" }
+            }
+        },
+        {
+            "Sid": "PassOnlyTheServerRole",
+            "Effect": "Allow",
+            "Action": "iam:PassRole",
+            "Resource": "arn:aws:iam::787013172660:role/KalysServerRole"
+        }
+    ]
+}
+```
+
+What it deliberately leaves out, and why:
+
+- **No `iam:CreateRole` or `iam:AttachRolePolicy`.** With those, this key could
+  build a role holding `AdministratorAccess` and attach it to an instance -
+  which is account admin by another name. That is why step 1 stays a console
+  step. `iam:PassRole` is limited to the one role ARN, which is safe: it can
+  hand out that role and nothing else.
+- **No `ec2:TerminateInstances` or `ec2:DeleteSecurityGroup`.** The key can
+  create and start/stop, but cannot destroy the instance or the database on it.
+- **Locked to `us-east-1`**, so nothing can be launched in another region by
+  mistake and quietly bill you.
+
 ## 2. Create the security group
 
 EC2 -> Security Groups -> Create, name `kalys-sg`:
