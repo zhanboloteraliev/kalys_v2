@@ -136,11 +136,11 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   explicit rules about conditions and about checking numbers, deadlines and
   ages against the article's own words. Kyrgyz followed the instructions worst
   of the three languages. See the Step 9 entry in `LEARNING.md`.
-- Step 10 (deploy to AWS): prepared, not yet run. One `t3.medium` EC2
+- Step 10 (deploy to AWS): done, running. One `t3.medium` EC2
   instance in `us-east-1` runs everything: PostgreSQL in Docker, the Chainlit
   app as a systemd service, and Bedrock through an IAM role attached to the
   instance (never a copy of the access keys). `docs/deploy.md` is the runbook,
-  `deploy/setup.sh` bootstraps a fresh Ubuntu 24.04 instance, and
+  `deploy/setup.sh` bootstraps a fresh Ubuntu instance (24.04 or newer),
   `deploy/kalys.service` is the systemd unit. Two decisions worth remembering:
   the app binds to 127.0.0.1 and is reached over an SSH tunnel, so no port is
   open to the internet (every question costs Bedrock money, so an open
@@ -148,5 +148,17 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   as a 40 MB `pg_dump` rather than re-downloaded, because the source site
   blocks cloud IPs with a 403 (Step 2). Also changed `docker-compose.yml` to
   publish PostgreSQL on `127.0.0.1` instead of all interfaces.
-- The web UI still runs locally; the instance itself has not been created
-  yet. No DNS work done.
+  Deployed for real on 2026-10-13: instance `i-0aa39205f5024aa85` in `us-east-1` at
+  54.81.140.243, Ubuntu 26.04, role `KalysServerRole` attached. Verified end
+  to end on the server - 86,527 articles / 1,100 translations / 3,295
+  embeddings restored, and a real question answered through Bedrock using the
+  instance role with no credentials on the box. Two surprises: the instance
+  was launched on Ubuntu 26.04, which has no `python3.12` apt package and
+  ships Python 3.14 (no stable PyTorch wheels), so `setup.sh` now has uv
+  install and pin its own 3.12; and `docker.io` looked unavailable until
+  `apt-get update` ran on the fresh box. SSH is open to 0.0.0.0/0 (the owner's
+  IP changes between networks) - key-only auth, but worth moving to SSM
+  Session Manager later, which would need no inbound ports at all.
+- `kalysdev` was never widened: it is still Bedrock-only, and the instance,
+  role, and security group were all created by the owner in the console.
+- No DNS work done.

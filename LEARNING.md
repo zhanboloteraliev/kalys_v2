@@ -656,6 +656,26 @@ not in use, which is what keeps the cost near zero.
   to 40 MB, so there was no need to trim it to the current editions only - worth
   measuring before designing around a size problem that does not exist.
 
+### What actually happened when we ran it (2026-10-13)
+The deployment worked, and the two things that went wrong were both about the
+environment rather than the design:
+
+- **The instance was launched on Ubuntu 26.04, not 24.04.** 26.04 has no
+  `python3.12` apt package and ships Python 3.14, which PyTorch has no stable
+  wheels for - and PyTorch is what the local embedding model runs on. The fix
+  was better than the original: `setup.sh` now has uv install and pin its own
+  Python 3.12, so the script no longer depends on which Ubuntu you picked.
+  Relying on the distro for a language runtime is a hidden version coupling.
+- **`docker.io` appeared to not exist.** `apt-cache policy docker.io` returned
+  `Candidate: (none)` on the fresh instance, which looks like "this package is
+  gone from this release". It was an empty package cache - `apt-get update`
+  made it resolve to 29.1.3 immediately. Worth checking the boring explanation
+  before redesigning around a missing dependency.
+
+The IAM role worked first time: a real question answered through Bedrock from
+the instance with no credentials anywhere on the server, which is the part
+that would have been most annoying to debug remotely.
+
 ### Interview questions
 - *Why not put the app on Lambda and make it serverless?* The chat holds a
   WebSocket open for streaming and keeps a 1 GB embedding model in memory.
