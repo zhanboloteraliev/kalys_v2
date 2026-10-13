@@ -156,9 +156,12 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   was launched on Ubuntu 26.04, which has no `python3.12` apt package and
   ships Python 3.14 (no stable PyTorch wheels), so `setup.sh` now has uv
   install and pin its own 3.12; and `docker.io` looked unavailable until
-  `apt-get update` ran on the fresh box. SSH is open to 0.0.0.0/0 (the owner's
-  IP changes between networks) - key-only auth, but worth moving to SSM
-  Session Manager later, which would need no inbound ports at all.
+  `apt-get update` ran on the fresh box. Access is through AWS Systems Manager
+  Session Manager, not SSH: the security group (`launch-wizard-3`,
+  `sg-02890acd42ec0fbc3`) has **zero inbound rules** and port 22 is closed.
+  The SSM agent connects outward to AWS, so the owner's changing IP no longer
+  matters and there is no open port to find. `kalys.pem` is kept only as a way
+  back in - re-adding an SSH rule in the console would restore it.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

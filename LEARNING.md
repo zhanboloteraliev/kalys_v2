@@ -676,6 +676,34 @@ The IAM role worked first time: a real question answered through Bedrock from
 the instance with no credentials anywhere on the server, which is the part
 that would have been most annoying to debug remotely.
 
+### Switching from SSH to SSM Session Manager
+Port 22 had been open to the whole internet, because the owner's IP changes
+between networks and a single "My IP" rule kept locking them out. Session
+Manager removed the problem rather than managing it: the agent on the instance
+connects *outward* to AWS, and you are relayed in through that, so the security
+group now has **zero inbound rules** and the owner's address is irrelevant.
+Port forwarding still works, so the chat is reached at `localhost:8000` exactly
+as before.
+
+Two things this cost us, both worth remembering:
+
+- **The policy went onto the user instead of the role.** The agent's own log
+  said it plainly - `assumed-role/KalysServerRole ... is not authorized to
+  perform: ssm:UpdateInstanceInformation` - but it took three rounds of asking
+  the owner to check the console to find it. Every other step had been "paste
+  this JSON", while `AmazonSSMManagedInstanceCore` is an AWS-managed policy you
+  attach by name, and that difference was never stated.
+- **Not having read access made debugging far slower than the fix.** Granting
+  `iam:Get*`/`List*`, `ec2:Describe*` and `ssm:Describe*` found the cause in a
+  single query. Read access carries none of the escalation risk that write
+  access to IAM does, and IAM read never returns secret keys. It should have
+  been offered at the start instead of after the owner got frustrated.
+
+The order mattered: SSM was proven working - registration Online, port forward
+returning HTTP 200, and an interactive shell - *before* the SSH rule was
+deleted. Closing the only way in before testing the new one is how people lock
+themselves out of a server.
+
 ### Interview questions
 - *Why not put the app on Lambda and make it serverless?* The chat holds a
   WebSocket open for streaming and keeps a 1 GB embedding model in memory.
