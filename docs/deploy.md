@@ -194,6 +194,96 @@ ssh -i <your-key.pem> -L 8000:localhost:8000 ubuntu@<instance-ip>
 
 Leave that running and open <http://localhost:8000>.
 
+## 7. Optional: reach the instance through SSM instead of SSH
+
+Session Manager connects through the AWS API rather than over the network.
+The agent on the instance opens an outbound connection to AWS, and you are
+relayed through it, so **the security group needs no inbound rules at all** -
+not even port 22. Your own IP address stops mattering, and there is no key
+file to protect.
+
+Ubuntu's AWS images already run the SSM agent, so only permissions are
+missing.
+
+### 7a. Let the agent register (console)
+
+IAM -> Roles -> `KalysServerRole` -> Add permissions -> Attach policies ->
+attach the AWS-managed **`AmazonSSMManagedInstanceCore`**.
+
+Until this is attached the agent is running but cannot talk to AWS, and the
+instance will not appear in Systems Manager -> Fleet Manager.
+
+### 7b. Let yourself start sessions (console)
+
+IAM -> Users -> `kalysdev` -> Add permissions -> Create inline policy -> JSON,
+named `KalysSsmSession`. Scoped to this one instance:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "StartSessionOnKalysOnly",
+            "Effect": "Allow",
+            "Action": "ssm:StartSession",
+            "Resource": [
+                "arn:aws:ec2:us-east-1:787013172660:instance/i-0aa39205f5024aa85",
+                "arn:aws:ssm:*:*:document/AWS-StartPortForwardingSession",
+                "arn:aws:ssm:*:*:document/SSM-SessionManagerRunShell"
+            ]
+        },
+        {
+            "Sid": "ManageOwnSessions",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:TerminateSession",
+                "ssm:ResumeSession"
+            ],
+            "Resource": "arn:aws:ssm:*:*:session/${aws:username}-*"
+        },
+        {
+            "Sid": "Lookups",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeSessions",
+                "ssm:DescribeInstanceInformation",
+                "ssm:GetConnectionStatus"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+### 7c. Install the plugin (laptop)
+
+The AWS CLI needs a helper binary for sessions. Without root:
+
+```bash
+curl -sS "https://s3.amazonaws.com/session-manager-downloads/plugin/latest/linux_64bit/session-manager-plugin.rpm" -o smp.rpm
+rpm2cpio smp.rpm | cpio -idm
+cp usr/local/sessionmanagerplugin/bin/session-manager-plugin ~/.local/bin/
+chmod +x ~/.local/bin/session-manager-plugin
+```
+
+### 7d. Use it
+
+```bash
+# a shell on the instance, no SSH
+aws ssm start-session --target i-0aa39205f5024aa85
+
+# the chat on http://localhost:8000, no SSH
+aws ssm start-session --target i-0aa39205f5024aa85 \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters '{"portNumber":["8000"],"localPortNumber":["8000"]}'
+```
+
+### 7e. Close port 22
+
+Only once the two commands above work. EC2 -> Security Groups -> `kalys-sg`
+-> Inbound rules -> Edit -> delete the SSH rule -> Save. Keep the `.pem` file
+as a way back in if SSM ever breaks: you can re-add the rule from the console.
+
 ## Running it day to day
 
 On the instance:
