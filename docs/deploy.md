@@ -134,7 +134,7 @@ EC2 -> Launch instance:
 | Setting | Value |
 | --- | --- |
 | Name | `kalys` |
-| AMI | Ubuntu Server 24.04 LTS | 
+| AMI | Ubuntu Server 24.04 LTS or newer (26.04 works) | 
 | Type | `t3.medium` (4 GB RAM) |
 | Key pair | create one, download the `.pem`, `chmod 400` it |
 | Security group | `kalys-sg` from step 2 |
@@ -142,7 +142,9 @@ EC2 -> Launch instance:
 | IAM instance profile | `KalysServerRole` from step 1 (under Advanced details) |
 | Region | `us-east-1` |
 
-Why these: Ubuntu 24.04 ships Python 3.12, which the project targets.
+Why these: the setup script has uv install its own Python 3.12, so the
+Ubuntu version does not matter (26.04 ships Python 3.14, which PyTorch has no
+stable wheels for yet).
 `t3.medium` is the smallest type that fits the local embedding model next to
 PostgreSQL - `t3.micro` (1 GB, the free-tier type) cannot. 30 GB holds the
 OS, the 1 GB model, PyTorch, and the database with room to spare.

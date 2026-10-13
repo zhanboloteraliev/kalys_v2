@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Set up a fresh Ubuntu 24.04 EC2 instance to run Kalys.
+# Set up a fresh Ubuntu EC2 instance (24.04 or newer) to run Kalys.
 #
 # Safe to run more than once: it skips work that is already done, and will not
 # reload the database if articles are already in it.
@@ -21,7 +21,7 @@ say() { printf '\n=== %s ===\n' "$1"; }
 
 say "Installing system packages"
 sudo apt-get update -qq
-sudo apt-get install -y -qq git curl docker.io docker-compose-v2 python3.12 python3.12-venv
+sudo apt-get install -y -qq git curl docker.io docker-compose-v2
 sudo systemctl enable --now docker
 # Lets you run docker without sudo after your next login. This script uses
 # sudo for docker anyway, so it does not depend on the group being active yet.
@@ -40,11 +40,16 @@ else
     echo "swap already present, skipping"
 fi
 
-say "Installing uv"
+say "Installing uv and Python 3.12"
 if [ ! -x "$HOME/.local/bin/uv" ]; then
     curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
 export PATH="$HOME/.local/bin:$PATH"
+# uv downloads a standalone Python 3.12 rather than using the distro's. Ubuntu
+# 26.04 ships Python 3.14, which PyTorch has no stable wheels for yet, and has
+# no python3.12 apt package at all. Letting uv own the version keeps this
+# script working on any Ubuntu release.
+uv python install 3.12
 
 say "Fetching the code"
 if [ -d "$APP_DIR/.git" ]; then
@@ -92,7 +97,9 @@ else
 fi
 
 say "Installing Python dependencies"
-uv sync --quiet
+# Pinned: requires-python is ">=3.12", so without this uv would pick the
+# system's 3.14 and fail to find PyTorch wheels.
+uv sync --quiet --python 3.12
 
 say "Downloading the embedding model"
 # Done now, not on the first question, so the first question is not slow.
