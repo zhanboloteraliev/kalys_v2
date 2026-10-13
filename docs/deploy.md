@@ -284,6 +284,59 @@ Only once the two commands above work. EC2 -> Security Groups -> `kalys-sg`
 -> Inbound rules -> Edit -> delete the SSH rule -> Save. Keep the `.pem` file
 as a way back in if SSM ever breaks: you can re-add the rule from the console.
 
+## 8. Read-only access for troubleshooting
+
+Without this, diagnosing anything in AWS turns into a slow loop: the
+assistant hits an error, cannot see why, and has to ask the owner to go and
+read the console. Attaching a read-only policy to `kalysdev` removes that
+loop entirely.
+
+This is safe in a way that write access is not. Nothing here can create,
+change, or delete anything. IAM read in particular never returns secret
+access keys - AWS does not expose them through any API, only at creation
+time.
+
+IAM -> Users -> `kalysdev` -> Add permissions -> Create inline policy ->
+JSON, named `KalysReadOnlyTroubleshoot`:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "SeeWhoCanDoWhat",
+            "Effect": "Allow",
+            "Action": [
+                "iam:Get*",
+                "iam:List*",
+                "iam:SimulatePrincipalPolicy"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "SeeComputeAndSsmState",
+            "Effect": "Allow",
+            "Action": [
+                "ec2:Describe*",
+                "ssm:Describe*",
+                "ssm:GetConnectionStatus",
+                "ssm:ListTagsForResource",
+                "cloudtrail:LookupEvents"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+```
+
+`iam:SimulatePrincipalPolicy` is the useful one: it answers "is this role
+allowed to perform this action?" directly, instead of guessing from an error
+message.
+
+Deliberately left out: `secretsmanager:*` and `ssm:GetParameter*`, because
+read access to those returns the secret values themselves rather than just
+configuration. Everything above returns settings, never credentials.
+
 ## Running it day to day
 
 On the instance:
