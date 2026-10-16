@@ -77,3 +77,13 @@ CREATE TABLE IF NOT EXISTS embeddings (
     UNIQUE (edition_id, number, lang)
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_vec ON embeddings USING hnsw (embedding vector_cosine_ops);
+
+-- Step 11: how many questions have been answered on each day. Used to stop
+-- the day's Bedrock spending at a fixed ceiling. Kept in PostgreSQL rather
+-- than in the process's memory on purpose: a counter in memory resets every
+-- time the service restarts, which is exactly when a spending cap must not
+-- forget what it has already allowed.
+CREATE TABLE IF NOT EXISTS usage (
+    day DATE PRIMARY KEY,
+    questions INTEGER NOT NULL DEFAULT 0
+);

@@ -23,6 +23,13 @@ import psycopg
 
 from kalys.answer import BedrockClient, build_prompt, gather_contexts
 from kalys.embed import LocalEmbedder
+from kalys.limits import (
+    DAY_LIMIT_MESSAGE,
+    SESSION_LIMIT_MESSAGE,
+    day_limit_reached,
+    record_question,
+    session_limit_reached,
+)
 
 SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
@@ -52,14 +59,29 @@ async def starters() -> list[cl.Starter]:
 @cl.on_message
 async def on_message(message: cl.Message) -> None:
     question = message.content
+
+    asked = cl.user_session.get("asked", 0)
+    if session_limit_reached(asked):
+        await cl.Message(content=SESSION_LIMIT_MESSAGE).send()
+        return
+
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
+        if day_limit_reached(conn):
+            await cl.Message(content=DAY_LIMIT_MESSAGE).send()
+            return
         contexts = gather_contexts(conn, embedder, question)
+        if contexts:
+            # Counted before the answer is generated, not after: a question
+            # that fails halfway still cost a Bedrock call, and counting only
+            # successes would let repeated failures run past the budget.
+            record_question(conn)
 
     if not contexts:
         await cl.Message(content="No matching articles were found for this question.").send()
         return
 
+    cl.user_session.set("asked", asked + 1)
     prompt = build_prompt(question, contexts)
     reply = cl.Message(content="")
     await reply.send()

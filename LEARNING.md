@@ -760,3 +760,57 @@ permissions change is a deploy, even when no code moves.
   money?* Nothing is listening on a public port - the app binds to localhost
   and is reached through an SSH tunnel, with only port 22 open, to the owner's
   IP. A public deployment would need a login and a Bedrock spend cap first.
+
+## Step 11: cost controls
+
+### What we built
+`src/kalys/limits.py`, a `usage` table in `db/schema.sql`, and two checks in
+`web.py`: a per-session limit (default 15) and a per-day limit across all
+users (default 100). Both come from environment variables. The command line
+tool is deliberately not limited - that is the owner's own use.
+
+### Why
+Every answered question is one Bedrock call, about $0.03-0.05. A public URL
+with no limit means anyone, including a bot, can spend the owner's money while
+he sleeps. This is the one thing that has to exist before the site can be
+public, which is why it comes before HTTPS and the domain.
+
+### What we learned
+- **A spending cap must not live in memory.** The obvious implementation is a
+  counter in the process, but it resets on every restart - and a restart is
+  exactly the moment you least want the cap to forget what it has already
+  allowed. Anyone who could crash the app could also reset the budget. The
+  count lives in PostgreSQL, which the project already runs.
+- **Count the question before answering it, not after.** Counting successes
+  only sounds fairer, but a question that fails halfway has still paid for a
+  Bedrock call, so repeated failures would run past the budget without ever
+  incrementing the counter.
+- **Do the increment in one SQL statement.** `INSERT ... ON CONFLICT DO UPDATE
+  SET questions = usage.questions + 1` cannot be interleaved the way a read,
+  then add one, then write can. Two questions arriving together would
+  otherwise both read the old number and store the same new one, undercounting
+  the day.
+- **Two limits do different jobs.** The daily limit bounds the cost. The
+  session limit stops one visitor using the whole day in two minutes, which
+  the daily limit alone permits.
+- **Test that it refuses before it spends, not just that it refuses.** Setting
+  the limit to 0 and sending a question showed the refusal appear instantly,
+  with no Bedrock call in the log and nothing added to `usage`. A cap that
+  blocks only after calling the model would be useless.
+
+### Interview questions
+- *Where do you store a rate limit counter, and why?* In the database, not in
+  the process. An in-memory counter resets on restart or deploy, so the limit
+  silently stops being a limit at the worst time, and it cannot be shared if
+  the app ever runs as more than one process.
+- *How do you stop two simultaneous requests both getting the last slot?* Do
+  the read and the write as one atomic statement - here `INSERT ... ON
+  CONFLICT DO UPDATE` with the increment in SQL - rather than reading the count
+  into Python, adding one, and writing it back.
+- *Should a failed request count against a quota?* For a cost quota, yes: the
+  money was already spent on the API call, and only counting successes gives a
+  way to exceed the budget by failing repeatedly.
+- *Why limit per session as well as per day?* They bound different risks. The
+  daily cap controls total cost; without a session cap a single visitor could
+  consume the whole day's budget in a couple of minutes and the site would be
+  dead for everyone else.

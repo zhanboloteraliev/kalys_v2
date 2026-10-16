@@ -55,7 +55,8 @@
   The newest "Claude 5" family models are not yet granted for this account.
 
 ## Later phases (not now)
-AWS deploy, rate limiting + cost cap, monitoring, dashboard.
+Monitoring, dashboard. HTTPS + the `kalys.eraliev.com` domain, then making the
+site public (do not make it public before checking the Step 11 limits are on).
 More acts: the other in-force codes (21 codes in total, type `0030`). Add them in `src/kalys/acts.py`.
 
 ## Current status (update after each step)
@@ -173,6 +174,13 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   AccessDenied on `InvokeModelWithResponseStream` in the chat while the
   non-streaming CLI path still looks fine. Check with
   `aws iam get-role --role-name KalysServerRole --query Role.PermissionsBoundary`.
+- Step 11 (cost controls): done. `src/kalys/limits.py` plus a `usage` table
+  cap the chat at `KALYS_MAX_QUESTIONS_PER_SESSION` (default 15) and
+  `KALYS_MAX_QUESTIONS_PER_DAY` (default 100, about $4/day of Bedrock). The
+  daily count is in PostgreSQL, not memory, so a restart cannot reset the
+  budget. Verified with the limit set to 0 that the refusal happens before any
+  Bedrock call. The CLI is not limited on purpose. See the Step 11 entry in
+  `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
