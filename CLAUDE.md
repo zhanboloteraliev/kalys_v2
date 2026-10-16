@@ -142,8 +142,8 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   instance (never a copy of the access keys). `docs/deploy.md` is the runbook,
   `deploy/setup.sh` bootstraps a fresh Ubuntu instance (24.04 or newer),
   `deploy/kalys.service` is the systemd unit. Two decisions worth remembering:
-  the app binds to 127.0.0.1 and is reached over an SSH tunnel, so no port is
-  open to the internet (every question costs Bedrock money, so an open
+  the app binds to 127.0.0.1 and is reached by SSM port forwarding, so no port
+  is open to the internet (every question costs Bedrock money, so an open
   endpoint is a way for strangers to spend it); and the database is moved up
   as a 40 MB `pg_dump` rather than re-downloaded, because the source site
   blocks cloud IPs with a 403 (Step 2). Also changed `docker-compose.yml` to
@@ -161,7 +161,12 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   `sg-02890acd42ec0fbc3`) has **zero inbound rules** and port 22 is closed.
   The SSM agent connects outward to AWS, so the owner's changing IP no longer
   matters and there is no open port to find. `kalys.pem` is kept only as a way
-  back in - re-adding an SSH rule in the console would restore it.
+  back in - re-adding an SSH rule in the console would restore it. An SSM
+  shell logs in as `ssm-user`, so `sudo su - ubuntu` is needed to reach the
+  project directory. Verified on 2026-10-15 that a stop/start comes back
+  clean: the public IP changed (now 3.81.23.59, which no longer matters since
+  SSM targets the instance id), and PostgreSQL, the data, and the `kalys`
+  service all returned on their own.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
