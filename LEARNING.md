@@ -704,6 +704,41 @@ returning HTTP 200, and an interactive shell - *before* the SSH rule was
 deleted. Closing the only way in before testing the new one is how people lock
 themselves out of a server.
 
+### The permissions boundary that silently broke Bedrock
+Attaching `AmazonSSMManagedInstanceCore` to `KalysServerRole` fixed SSM and
+broke Bedrock in the same click, because in the console it was set as a
+**permissions boundary** rather than as an attached policy.
+
+A permissions boundary is a ceiling, not a grant. A role's effective
+permissions are the *intersection* of its identity policies and its boundary.
+`KalysBedrockInvoke` still allowed both Bedrock actions - the JSON was
+correct - but the boundary only permitted SSM, so the intersection was SSM
+only:
+
+| Action | Policy allows | Boundary allows | Effective |
+| --- | --- | --- | --- |
+| SSM | yes | yes | works |
+| Bedrock | yes | no | denied |
+
+What made this hard to see:
+
+- **The role looked right.** `list-attached-role-policies` showed both
+  `KalysBedrockInvoke` and `AmazonSSMManagedInstanceCore`. Nothing was missing.
+  The boundary is a separate field that has to be asked for specifically
+  (`aws iam get-role --query Role.PermissionsBoundary`).
+- **It only broke the web UI, not the CLI.** The earlier test used
+  `invoke_model`, while the chat uses `invoke_model_with_response_stream`, and
+  the denial arrived for the streaming call alone. That made it look like a
+  streaming or WebSocket problem rather than a permissions one.
+- **The error message named the cause exactly** - "because no permissions
+  boundary allows the action" - and reading it carefully was worth more than
+  any guessing. AWS denial messages say *which* kind of policy refused.
+
+The deeper lesson is about testing: the CLI check on the instance passed on
+2026-10-13 and the boundary was added afterwards, so a verification that was
+genuinely true stopped being true without anything in the app changing. A
+permissions change is a deploy, even when no code moves.
+
 ### Interview questions
 - *Why not put the app on Lambda and make it serverless?* The chat holds a
   WebSocket open for streaming and keeps a 1 GB embedding model in memory.

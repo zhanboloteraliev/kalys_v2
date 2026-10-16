@@ -167,6 +167,12 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   clean: the public IP changed (now 3.81.23.59, which no longer matters since
   SSM targets the instance id), and PostgreSQL, the data, and the `kalys`
   service all returned on their own.
+- Watch for permissions boundaries on `KalysServerRole`. Attaching
+  `AmazonSSMManagedInstanceCore` as a *boundary* (rather than as a policy)
+  caps the role at SSM-only and silently blocks Bedrock, which shows up as
+  AccessDenied on `InvokeModelWithResponseStream` in the chat while the
+  non-streaming CLI path still looks fine. Check with
+  `aws iam get-role --role-name KalysServerRole --query Role.PermissionsBoundary`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
