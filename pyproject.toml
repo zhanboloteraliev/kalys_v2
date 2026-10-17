@@ -20,6 +20,8 @@ dependencies = [
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    # Only for assets/make_logo.py, which rebuilds the logo files.
+    "pillow>=11",
 ]
 
 [build-system]

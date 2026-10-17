@@ -814,3 +814,57 @@ public, which is why it comes before HTTPS and the domain.
   daily cap controls total cost; without a session cap a single visitor could
   consume the whole day's budget in a couple of minutes and the site would be
   dead for everyone else.
+
+## Logo and site icons
+
+### What we built
+A wordmark for the site: the magnifying glass doubles as the counter of the
+"K" in Kalys. The master image is `assets/kalys_logo.png` (white on solid
+black). `assets/make_logo.py` derives the four files the web UI actually
+needs, into `public/`: `logo_dark.png`, `logo_light.png`, `favicon.png` and
+`avatars/kalys.png`.
+
+### Why
+A finished-looking site is worth a little to a recruiter, and the name is
+worth explaining: *kalys* means impartial. We did not copy the look of a
+well-known TV lawyer's logo, which was the first idea: that character is a
+joke about a dishonest lawyer, which is the opposite of what this project
+claims about itself - careful citations and an honest "machine translation,
+not an official text" label on every English text.
+
+### What we learned
+- **Derive the variants, do not draw them.** The versions are a crop, a
+  recolour and a resize away from the master, so a 60-line script makes them
+  all and makes the same bytes every time. Editing four files by hand means
+  they drift apart the first time the logo changes.
+- **Use brightness as the alpha channel.** The master is white on black, so
+  how bright a pixel is already says how opaque it should be. Selecting
+  "every black pixel" and deleting it instead would leave a dark fringe on
+  every curve, because the smooth edges are grey, not black or white.
+- **An icon is not a small logo.** At 32 pixels the full wordmark is
+  unreadable, so the tab icon and the answer avatar use only the lens. Even
+  the handle had to go: it is invisible at that size and only makes the "K"
+  smaller.
+- **A transparent icon is the wrong default.** The header logo should be
+  transparent so it sits on the page background, but the tab icon and the
+  avatar appear on backgrounds we do not control, so they keep a black tile
+  of their own. A white mark on transparency vanishes on a light tab bar.
+- **A browser extension can look exactly like a bug.** Switching the site to
+  light mode showed the dark logo on a dark background, which looked like a
+  broken asset. The page had `class="light"` but a background of
+  `rgb(24, 26, 27)` - Dark Reader's colour, forced by an extension in this
+  browser, not by our CSS. Checking the computed style was what separated the
+  two; a screenshot alone would have sent us off fixing the wrong thing.
+
+### Interview questions
+- *Why generate the image variants with a script?* They are all derived from
+  one master by cropping, recolouring and resizing. A script makes the set
+  reproducible and keeps them consistent when the master changes; hand-edited
+  exports drift.
+- *How do you cut a logo out of its background without ugly edges?* If the art
+  is a single colour on a flat background, use the grey level as the alpha
+  channel. Thresholding on colour throws away the antialiasing and leaves a
+  fringe.
+- *Why is the favicon a different image from the logo?* Legibility at 16-32
+  pixels. The wordmark becomes a smudge, so the icon uses only the
+  distinctive part of the mark.
