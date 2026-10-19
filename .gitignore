@@ -34,6 +34,7 @@ probe_report.md
 ingest_report.md
 hf_report.md
 parse_report.md
+eval_report.md
 
 # Chainlit's default UI translations (auto-generated, dozens of languages
 # we never customize) - config.toml (our own customization) is tracked.

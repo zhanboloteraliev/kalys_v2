@@ -868,3 +868,84 @@ not an official text" label on every English text.
 - *Why is the favicon a different image from the logo?* Legibility at 16-32
   pixels. The wordmark becomes a smudge, so the icon uses only the
   distinctive part of the mark.
+
+## Step 12: a labelled evaluation set for search
+
+### What we built
+`eval/questions.jsonl`: 125 questions in English, Russian and Kyrgyz, each
+labelled by hand with the article that answers it. `src/kalys/evaluate.py`
+runs every question through the same hybrid search the chat uses and reports
+hit@k, recall@10 and Mean Reciprocal Rank, broken down by language, by act and
+by kind of question. It writes `eval_report.md` and calls no paid API, so it
+costs nothing to run as often as we like.
+
+### Why
+Until now the only way to judge a change to search was to ask one question and
+read the answer. That cannot tell you whether a change helped, because one
+question is not evidence and nobody remembers how the old version did. Every
+idea we had been weighing - a smaller embedding model to fit a cheaper
+instance, a hosted embedding API, more acts - needed a number to decide, and
+there was none.
+
+### What the first run found
+Overall hit@10 is 0.84 and MRR 0.629, but the average hides the real result:
+
+| language | hit@10 | MRR |
+| --- | --- | --- |
+| English | 0.94 | 0.706 |
+| Russian | 0.93 | 0.744 |
+| **Kyrgyz** | **0.53** | **0.349** |
+
+Kyrgyz, the state language and the thing that makes this project unusual, is
+far behind the other two. 14 of the 20 complete misses are Kyrgyz questions.
+
+Both halves of the hybrid search fail for Kyrgyz, for different reasons:
+- **Keyword search finds nothing.** Asked `Уурулук үчүн кандай жаза каралган?`
+  ("what is the punishment for theft"), it matches no article, because the law
+  says `Уурдоо` and the question says `Уурулук`. Kyrgyz uses the `simple`
+  PostgreSQL text search configuration, which does no stemming at all, and
+  Kyrgyz is agglutinative, so word forms almost never match literally.
+- **Vector search is lost.** For that same question the nearest articles are
+  kidnapping, negligent death, rape and torment. The question's vector is
+  compared against the English and Russian embeddings too, which is the whole
+  point of a multilingual model, but the model encodes Kyrgyz so poorly that
+  it does not land near the right place in the shared space.
+
+### What we learned
+- **An average across languages hides the thing you most want to know.** A
+  single 0.84 looks respectable and would have let us carry on. The per
+  language split is where the actual defect is, and it took one extra column
+  in the report to see it.
+- **Build the measurement before the optimisation.** We had been about to pick
+  a smaller or hosted embedding model to cut the server bill, worrying that it
+  might hurt Kyrgyz. It turns out Kyrgyz is already the weak part. Without the
+  numbers we would have blamed the change for a problem that was there first.
+- **Check the labels before trusting the score.** The first question in the set
+  fails, so we looked at what it actually retrieved rather than assuming the
+  label was right. Article 97 really is the article with the time limit and it
+  really was absent from the top 10 - a genuine miss, not a strict label. A
+  gold set with sloppy labels is worse than none, because the numbers still
+  look like numbers.
+- **Label by act and article, never by edition id.** Editions change; a label
+  that says "Article 97 of the Criminal Procedure Code" stays correct when a
+  new edition is published, and one that says "edition 56829" does not.
+- **Measure at the depth the system actually uses.** The chat shows the model
+  the top 10, so an article found at rank 11 might as well not exist. That is
+  why the headline number is hit@10 and not something deeper.
+
+### Interview questions
+- *How do you know your search is any good?* A labelled set of 125 questions
+  across three languages with the correct article recorded for each, scored
+  with hit@k, recall and MRR. Before that there was only the impression left
+  by whichever question was asked last.
+- *What is MRR and why use it alongside hit@k?* Mean Reciprocal Rank averages
+  1/rank of the first correct result, so being right at rank 1 counts for much
+  more than being right at rank 9. hit@k alone treats those as equally good,
+  and they are not, because the top of the list is what gets read.
+- *Your overall score was 0.84. Why was that not good enough?* Because it was
+  an average over three languages, and splitting it showed Kyrgyz at 0.53
+  against 0.94 for English. The aggregate was hiding the failure.
+- *Why does keyword search fail on Kyrgyz?* PostgreSQL has no Kyrgyz stemmer,
+  so the text is indexed with the `simple` configuration, which matches whole
+  words only. Kyrgyz builds meaning by adding suffixes, so the form in the
+  question is rarely the form in the law.

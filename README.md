@@ -64,9 +64,34 @@ per second, a clear User-Agent with contact info, and a local cache, so each pag
 - [x] Answers with citations (Amazon Bedrock)
 - [x] Web UI (English by default, sample questions)
 - [x] AWS deployment and a cost cap on how much the chat can spend
-- [ ] A labelled evaluation set, to measure retrieval instead of guessing at it
+- [x] A labelled evaluation set, to measure retrieval instead of guessing at it
+- [ ] Fix Kyrgyz retrieval (see the numbers below)
 - [ ] HTTPS and a public address
 - [ ] More acts: the other in-force codes
+
+## How good is the search?
+
+125 questions in three languages, each labelled by hand with the article that
+answers it (`eval/questions.jsonl`). Scored with `uv run python -m kalys.evaluate`,
+which runs the same search the chat uses and calls no paid API.
+
+| Language | Questions | hit@10 | MRR |
+| --- | --- | --- | --- |
+| English | 65 | 0.94 | 0.706 |
+| Russian | 30 | 0.93 | 0.744 |
+| Kyrgyz | 30 | 0.53 | 0.349 |
+| **All** | **125** | **0.84** | **0.629** |
+
+*hit@10* is the share of questions where a correct article is in the top 10,
+which is what the model is shown. *MRR* averages 1/rank of the first correct
+article, so being right at rank 1 counts for more than being right at rank 9.
+
+**Kyrgyz is the weak point, and the overall average hides it.** Both halves of
+the hybrid search fail there: PostgreSQL has no Kyrgyz stemmer, so keyword
+search matches whole words only while Kyrgyz builds meaning with suffixes; and
+the multilingual embedding model encodes Kyrgyz poorly, so the question does
+not land near the right articles even in the shared vector space. Fixing this
+is the next piece of work, and the numbers above are the baseline to beat.
 
 ## Disclaimer
 

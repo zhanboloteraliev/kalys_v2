@@ -181,6 +181,23 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   budget. Verified with the limit set to 0 that the refusal happens before any
   Bedrock call. The CLI is not limited on purpose. See the Step 11 entry in
   `LEARNING.md`.
+- Step 12 (evaluation set): done. `eval/questions.jsonl` holds 125 questions
+  (65 en, 30 ru, 30 kg) labelled by act and article number, and
+  `uv run python -m kalys.evaluate` scores hybrid search with hit@k, recall@10
+  and MRR, writing `eval_report.md` (git-ignored, like the other reports). It
+  calls no paid API. Baseline: overall hit@10 0.84, MRR 0.629 - but English is
+  0.94, Russian 0.93 and **Kyrgyz only 0.53**. Both halves of the search fail
+  for Kyrgyz: there is no Kyrgyz stemmer in PostgreSQL (the `simple` config
+  matches whole words only, and Kyrgyz is agglutinative), and the embedding
+  model encodes Kyrgyz badly. Fixing Kyrgyz retrieval is the next step, and
+  these numbers are the baseline. Do not change the embedding model or the
+  instance size without re-running this first. See the Step 12 entry in
+  `LEARNING.md`.
+- Also added in Step 12: a guard in the system prompt against working out clock
+  times and dates. Asked when a court must review a detention begun at 14:00,
+  the model gave the correct rule but mis-computed the deadline in both
+  directions, once producing a time before the detention. Improved, not solved:
+  it still computes despite the instruction.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
