@@ -201,8 +201,10 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   Kyrgyz query back in makes it *worse* than the translation alone, because RRF
   assumes every ranking it merges carries signal - so replace the query, do not
   add to it. Building this at runtime needs a small paid translation call per
-  question (about $0.00006 with Haiku, against roughly $0.04 for the answer
-  itself); the owner has not approved that yet. See the Step 12b entry in
+  question. A question is ~100 tokens in and ~30 out, so even on the model the
+  chat already uses this is a low single-digit percentage of the ~$0.04 an
+  answer costs, and less on a smaller model - check current Bedrock prices
+  before quoting a figure. The owner has not approved that yet. See the Step 12b entry in
   `LEARNING.md`.
 - Also added in Step 12: a guard in the system prompt against working out clock
   times and dates. Asked when a court must review a detention begun at 14:00,
