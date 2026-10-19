@@ -949,3 +949,57 @@ Both halves of the hybrid search fail for Kyrgyz, for different reasons:
   so the text is indexed with the `simple` configuration, which matches whole
   words only. Kyrgyz builds meaning by adding suffixes, so the form in the
   question is rarely the form in the law.
+
+## Step 12b: translating the question before searching
+
+### What we tested
+Kyrgyz retrieval sat at hit@10 0.53 while English and Russian were above 0.93.
+We translated all 30 Kyrgyz questions by hand (`eval/ky_query_translations.json`)
+and measured what the search does with each version:
+`uv run python eval/translation_experiment.py`.
+
+| query sent to the search | hit@1 | hit@10 | MRR |
+| --- | --- | --- | --- |
+| Kyrgyz as-is (today) | 0.27 | 0.53 | 0.349 |
+| Russian translation | 0.60 | 0.93 | 0.750 |
+| **English translation** | **0.70** | **0.97** | **0.825** |
+| Kyrgyz + Russian fused | 0.37 | 0.93 | 0.574 |
+| Kyrgyz + Russian + English fused | 0.70 | 0.93 | 0.794 |
+
+### What we learned
+- **Translating the question fixes most of the gap.** hit@10 goes from 0.53 to
+  0.97, and MRR more than doubles. The articles were always there and always
+  findable; the Kyrgyz *question* was the part that did not work.
+- **English beats Russian, which was not the guess.** Russian is closer to the
+  source texts, so it looked like the natural target. English wins because both
+  halves of the search are strongest there: the `translations` table is indexed
+  with PostgreSQL's `english` stemmer, and the embedding model has seen far
+  more English than anything else.
+- **Adding a bad ranking to a good one makes it worse.** Fusing Kyrgyz with
+  Russian scores MRR 0.574, below Russian alone at 0.750. Reciprocal Rank
+  Fusion assumes every list it merges carries signal; the Kyrgyz ranking is
+  close to noise, and RRF has no way to know that, so the noise pulls good
+  results down. The fix is to *replace* the query, not to add to it. This is
+  worth remembering, because "search with everything and merge" sounds safe
+  and is not.
+- **Two questions fail in every variant.** Both ask about something the law
+  does cover (the time limit on detention, when a court acquits), so they are a
+  real retrieval gap rather than a language problem - one of them fails in
+  native English too. Translation is not the whole answer.
+- **Measure the ceiling before building the machinery.** These translations
+  were made by hand, so the numbers are the best this approach could do. That
+  was the cheap way to find out whether a runtime translation step is worth
+  paying for at all, before writing any of it.
+
+### Interview questions
+- *Your Kyrgyz search was weak. What did you do?* Measured first. A labelled
+  set showed Kyrgyz at hit@10 0.53 against 0.94 for English, then an experiment
+  showed that translating the question to English before searching lifts it to
+  0.97. The retrieval was fine; the query was the problem.
+- *Why not just search with the original and the translation together?* We
+  tried, and it was worse than the translation alone. RRF treats every input
+  ranking as informative, so merging in a near-random list costs you.
+- *Why English rather than Russian, when the law is written in Russian?* Both
+  halves of the search work better in English: there is a real stemmer for the
+  keyword half, and the embedding model is strongest there. We only know this
+  because we measured both.

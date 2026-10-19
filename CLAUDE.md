@@ -193,6 +193,17 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   these numbers are the baseline. Do not change the embedding model or the
   instance size without re-running this first. See the Step 12 entry in
   `LEARNING.md`.
+- Step 12b (translate the question before searching): measured, not yet built.
+  `eval/translation_experiment.py` with hand-made translations in
+  `eval/ky_query_translations.json` shows that sending an **English**
+  translation of a Kyrgyz question to the search lifts Kyrgyz from hit@10 0.53
+  / MRR 0.349 to **0.97 / 0.825**. Russian is second (0.93 / 0.750). Fusing the
+  Kyrgyz query back in makes it *worse* than the translation alone, because RRF
+  assumes every ranking it merges carries signal - so replace the query, do not
+  add to it. Building this at runtime needs a small paid translation call per
+  question (about $0.00006 with Haiku, against roughly $0.04 for the answer
+  itself); the owner has not approved that yet. See the Step 12b entry in
+  `LEARNING.md`.
 - Also added in Step 12: a guard in the system prompt against working out clock
   times and dates. Asked when a court must review a detention begun at 14:00,
   the model gave the correct rule but mis-computed the deadline in both

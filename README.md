@@ -65,7 +65,8 @@ per second, a clear User-Agent with contact info, and a local cache, so each pag
 - [x] Web UI (English by default, sample questions)
 - [x] AWS deployment and a cost cap on how much the chat can spend
 - [x] A labelled evaluation set, to measure retrieval instead of guessing at it
-- [ ] Fix Kyrgyz retrieval (see the numbers below)
+- [x] Find out why Kyrgyz retrieval is weak, and measure a fix
+- [ ] Build the fix into the chat
 - [ ] HTTPS and a public address
 - [ ] More acts: the other in-force codes
 
@@ -92,6 +93,11 @@ search matches whole words only while Kyrgyz builds meaning with suffixes; and
 the multilingual embedding model encodes Kyrgyz poorly, so the question does
 not land near the right articles even in the shared vector space. Fixing this
 is the next piece of work, and the numbers above are the baseline to beat.
+
+An experiment (`eval/translation_experiment.py`) shows the way out: translating
+a Kyrgyz question into English before searching lifts Kyrgyz from hit@10 0.53 to
+**0.97**. The articles were always findable - the Kyrgyz *query* was the part
+that did not work.
 
 ## Disclaimer
 
