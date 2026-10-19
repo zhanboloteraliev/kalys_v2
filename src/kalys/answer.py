@@ -75,6 +75,13 @@ How to answer:
   assume a figure that is common in other countries (a 48-hour limit, an age of
   16) - the only figure that counts is the one the given article states for the
   situation asked about. If the article names no age, do not supply one.
+- Give a time limit the way the article gives it - a length of time measured
+  from a starting point, such as "45 hours from the moment of actual detention"
+  - and do not work out the clock time or calendar date that it lands on.
+  Arithmetic across hours and days is easy to get wrong, and a wrong deadline is
+  more dangerous than no deadline, because it looks like an answer. The reader
+  can apply the limit to their own facts. The same goes for working out an age
+  from a date of birth.
 - Cite every point you take from an article, like this: (<act name>, Article
   <number>, edition <date>). One citation per point is enough - you do not need
   one after every sentence.

@@ -5,7 +5,14 @@
 Ask a legal question in any of the three languages. Kalys answers in the same language
 and cites the exact source: the act, article, part, and edition date.
 
-> Status: early development (data pipeline). Live demo coming later at https://kalys.eraliev.com.
+![Kalys answering a question about detention procedure](assets/demo.gif)
+
+*A real answer from the running app. Every point carries the act, the article number, and
+the edition date it came from.*
+
+> Status: working end to end - 86,527 articles across 91 editions, hybrid search, and
+> answers from Amazon Bedrock grounded in the retrieved text. Runs on AWS. The public site
+> at https://kalys.eraliev.com is not up yet.
 
 ## Why it matters
 
@@ -32,8 +39,13 @@ Every edition of every act is kept, so a citation always points to a dated versi
 
 - **Python 3.12**, managed with **uv**
 - **PostgreSQL** (local, with Docker Compose) for articles and editions
+- **pgvector** and a local **sentence-transformers** model for semantic search, merged
+  with PostgreSQL full-text search using Reciprocal Rank Fusion
+- **Amazon Bedrock** (Claude) for the answers, reached through an IAM role on the instance
+  so no key is ever stored on the server
+- **Chainlit** for the chat UI, served from one EC2 instance and reached over SSM Session
+  Manager, with no port open to the internet
 - **pytest** and **ruff**, run in **GitHub Actions** CI
-- Planned: AWS (S3, Amazon Bedrock, Route 53), hybrid search (keywords + vectors)
 
 ## Data source
 
@@ -45,13 +57,16 @@ per second, a clear User-Agent with contact info, and a local cache, so each pag
 
 - [x] Project setup and CI
 - [x] Check the Ministry of Justice API ([notes](docs/cbd-api.md))
-- [ ] Download all editions of the 3 acts in Kyrgyz and Russian
-- [ ] Split texts into articles and store them in PostgreSQL
-- [ ] English machine translation of every article
-- [ ] Hybrid search
-- [ ] Answers with citations (Amazon Bedrock)
-- [ ] Web UI (English by default, sample questions)
-- [ ] AWS deployment, rate limiting, cost cap, monitoring
+- [x] Download all editions of the 3 acts in Kyrgyz and Russian
+- [x] Split texts into articles and store them in PostgreSQL (86,527 articles, 91 editions)
+- [x] English machine translation of every article of the current editions (1,100)
+- [x] Hybrid search (keyword + vector, merged with Reciprocal Rank Fusion)
+- [x] Answers with citations (Amazon Bedrock)
+- [x] Web UI (English by default, sample questions)
+- [x] AWS deployment and a cost cap on how much the chat can spend
+- [ ] A labelled evaluation set, to measure retrieval instead of guessing at it
+- [ ] HTTPS and a public address
+- [ ] More acts: the other in-force codes
 
 ## Disclaimer
 
