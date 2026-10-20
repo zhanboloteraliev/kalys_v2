@@ -39,6 +39,10 @@ SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 TOP_N = 10
 RRF_K = 60  # a standard RRF constant: big enough that rank 1 vs. rank 2 is not everything
+# Articles average 3.2 numbered parts. Fetching this many times `limit` rows
+# leaves enough room to still return `limit` distinct articles after parts of
+# the same article are collapsed together.
+PARTS_PER_ARTICLE = 5
 LANGUAGES = ("en", "ru", "kg")
 TEXT_SEARCH_CONFIG = {"en": "english", "ru": "russian", "kg": "simple"}
 
@@ -78,13 +82,28 @@ def keyword_search(conn, query: str, lang: str, limit: int = TOP_N) -> list[tupl
 def vector_search(
     conn, vector: list[float], lang: str, limit: int = TOP_N
 ) -> list[tuple[int, str]]:
-    """Articles in `lang` whose embedding is closest in meaning to `vector`."""
+    """Articles in `lang` whose embedding is closest in meaning to `vector`.
+
+    Embeddings are stored per numbered part (Step 13), so several rows can
+    belong to the same article - a question about detention matches three
+    parts of Article 97. The caller wants articles, so parts are collapsed
+    here, keeping each article at the rank of its best-matching part. More
+    rows are fetched than asked for, because those duplicates have to come
+    out of somewhere or the list comes back short.
+    """
     rows = conn.execute(
         "SELECT edition_id, number FROM embeddings "
         "WHERE lang = %s ORDER BY embedding <=> %s::vector LIMIT %s",
-        (lang, vector_literal(vector), limit),
+        (lang, vector_literal(vector), limit * PARTS_PER_ARTICLE),
     ).fetchall()
-    return [(edition_id, number) for edition_id, number in rows]
+
+    best: list[tuple[int, str]] = []
+    for article in ((edition_id, number) for edition_id, number in rows):
+        if article not in best:
+            best.append(article)
+            if len(best) == limit:
+                break
+    return best
 
 
 def reciprocal_rank_fusion(

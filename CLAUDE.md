@@ -206,6 +206,15 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   answer costs, and less on a smaller model - check current Bedrock prices
   before quoting a figure. The owner has not approved that yet. See the Step 12b entry in
   `LEARNING.md`.
+- Step 13 (chunking): done. `src/kalys/chunk.py` splits an article at its
+  numbered parts; `embed.py` stores a vector for the whole article (`part = ''`)
+  **and** one per part. 13,313 embeddings, up from 3,295. Parts alone were a
+  wash (hit@10 flat, MRR down) - they fixed specific questions and broke general
+  ones - so both are kept. Result: hit@10 0.84 -> **0.86**, hit@5 0.77 -> 0.81,
+  Kyrgyz 0.53 -> **0.60**, Russian 0.93 -> **0.97**; hit@1 and hit@3 unchanged.
+  A modest win, not the large one predicted. Re-embedding all three languages
+  takes about 2 hours of laptop CPU; never run it on the instance (it peaks
+  around 2 GB). See the Step 13 entry in `LEARNING.md`.
 - Also added in Step 12: a guard in the system prompt against working out clock
   times and dates. Asked when a court must review a detention begun at 14:00,
   the model gave the correct rule but mis-computed the deadline in both

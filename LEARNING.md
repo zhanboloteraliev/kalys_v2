@@ -1003,3 +1003,71 @@ and measured what the search does with each version:
   halves of the search work better in English: there is a real stemmer for the
   keyword half, and the embedding model is strongest there. We only know this
   because we measured both.
+
+## Step 13: embedding articles by part as well as whole
+
+### What we built
+`src/kalys/chunk.py` splits an article at its numbered parts, and `embed.py`
+now stores a vector for the whole article *and* one for each part. Embeddings
+went from 3,295 rows to 13,313.
+
+### Why
+Article 97 of the Criminal Procedure Code is 2,697 characters covering what
+the detention ruling must contain, the rights that must be explained, the
+45-hour limit and the copy for the prosecutor. Embedded as one vector, those
+topics average together and the 45-hour rule - the thing people actually ask
+about - was diluted until the search could not find it, in any of the three
+languages.
+
+### What the measurements said
+
+| | baseline | parts only | whole + parts |
+| --- | --- | --- | --- |
+| hit@1 | 0.50 | 0.47 | 0.50 |
+| hit@3 | 0.74 | 0.68 | 0.74 |
+| hit@5 | 0.77 | 0.76 | **0.81** |
+| hit@10 | 0.84 | 0.84 | **0.86** |
+| MRR | 0.629 | 0.596 | 0.632 |
+| Russian hit@10 | 0.93 | 0.97 | **0.97** |
+| Kyrgyz hit@10 | 0.53 | 0.50 | **0.60** |
+
+### What we learned
+- **Parts alone were a wash, and the aggregate hid why.** Overall hit@10 did
+  not move and MRR fell. Comparing question by question showed it was not
+  noise but two real effects cancelling: four questions fixed, four broken.
+- **Specific questions want a part; general questions want the article.** The
+  four fixed were "how long can the police hold me" in English, Russian and
+  Kyrgyz - one rule inside a long article. Two of the four broken were "what
+  does the Constitution say about the presumption of innocence" in two
+  languages: a general question that matches the whole of Article 57 and no
+  single part of it well. Short chunks also add spurious matches, which is why
+  hit@1 fell: more chunks means more chances for a wrong article to have one
+  lucky part.
+- **So keep both and let the search choose.** Storing the whole article and
+  its parts recovered everything parts-only lost and kept everything it
+  gained: 20 misses became 17, with four fixed and one regression
+  (`What does the Criminal Code say about torture?`).
+- **The honest size of the win is modest.** hit@1 and hit@3 are exactly the
+  baseline; the gains are at hit@5, hit@10 and in Kyrgyz recall. It was
+  predicted to be the largest available improvement and it was not. It is
+  worth keeping because it fixes a real class of failure - a specific rule
+  buried in a long article, which for a legal tool is the dangerous kind to
+  miss - and because part-level vectors are what later allows citing a part
+  rather than a whole article.
+- **Compare runs question by question, not just by their averages.** The
+  summary row said "no change" for a change that fixed four things and broke
+  four others. Without the per-question diff we would have concluded the idea
+  did nothing and moved on with the wrong lesson.
+
+### Interview questions
+- *You chunked your documents. Did it help?* Not on its own - the aggregate did
+  not move. Splitting fixed specific questions and broke general ones. Keeping
+  a vector for the whole article alongside the parts kept both, and took hit@10
+  from 0.84 to 0.86 and Kyrgyz from 0.53 to 0.60.
+- *Why would smaller chunks make retrieval worse?* Two reasons. A general
+  question matches a document's overall meaning, which no single chunk carries.
+  And more, shorter chunks give more opportunities for an irrelevant document
+  to contain one passage that happens to match.
+- *How did you know the change was not simply neutral?* The per-question diff.
+  Four questions started working and four stopped; the average of those two is
+  zero and says nothing. Averages hide offsetting changes.

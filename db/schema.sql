@@ -78,6 +78,16 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 CREATE INDEX IF NOT EXISTS idx_embeddings_vec ON embeddings USING hnsw (embedding vector_cosine_ops);
 
+-- Step 13: one row per numbered part of an article, not one per article. A long
+-- article covers several separate rules, and averaging them into one vector
+-- buries the rule a question is actually about. `part` is '' for an article
+-- with no numbered parts. The old UNIQUE constraint did not include `part`, so
+-- it is replaced by a unique index that does.
+ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS part TEXT NOT NULL DEFAULT '';
+ALTER TABLE embeddings DROP CONSTRAINT IF EXISTS embeddings_edition_id_number_lang_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_unique
+    ON embeddings (edition_id, number, lang, part);
+
 -- Step 11: how many questions have been answered on each day. Used to stop
 -- the day's Bedrock spending at a fixed ceiling. Kept in PostgreSQL rather
 -- than in the process's memory on purpose: a counter in memory resets every
