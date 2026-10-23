@@ -1071,3 +1071,77 @@ languages.
 - *How did you know the change was not simply neutral?* The per-question diff.
   Four questions started working and four stopped; the average of those two is
   zero and says nothing. Averages hide offsetting changes.
+
+## Step 14: a better embedding model, and dropping Kyrgyz as a search language
+
+### What we built
+`BedrockEmbedder` in `src/kalys/embed.py` replaces the local
+sentence-transformers model with Amazon Titan Text Embeddings V2 (1024
+dimensions) through Bedrock. Kyrgyz was removed from the search languages, so
+`LANGUAGES` is now `("en", "ru")` and only those two are embedded. A Kyrgyz
+question will be translated into Russian and searched as Russian (not built
+yet). `KALYS_EMBEDDER=local` still selects the old model.
+
+### What it bought
+
+| | local mpnet | Titan v2 |
+| --- | --- | --- |
+| English hit@10 | 0.94 | **0.98** |
+| English MRR | 0.705 | **0.801** |
+| Russian hit@10 | 0.97 | 0.97 |
+| Russian MRR | 0.756 | **0.773** |
+
+Across the 95 English and Russian questions: hit@10 0.979, MRR 0.792.
+
+### What we learned
+- **The embedding model was the real limit, not the data or the chunking.**
+  Three earlier attempts moved the numbers by a point or two. Changing the
+  model moved English MRR by nearly ten. The lesson is not "models matter" but
+  that we only knew which of four suspects to spend effort on because there
+  was a measurement to point at.
+- **MRR moved far more than hit@10.** English hit@10 went 0.94 to 0.98, which
+  looks small; MRR went 0.705 to 0.801. The right article was usually
+  somewhere in the top ten before and is now usually first. Since the model
+  reads the top of the list, that is the number that changes answers.
+- **Cohere needed a Marketplace subscription, Titan did not.** A third-party
+  model on Bedrock requires `aws-marketplace:Subscribe`, which the project's
+  IAM user deliberately lacks. The first short test call succeeded and every
+  later one failed with AccessDenied, which looked like an IAM bug until the
+  full error message named AWS Marketplace. Read the whole error before
+  believing the error code.
+- **Titan is symmetric and Cohere is not.** Cohere's embed models need
+  `input_type` set to `search_document` when embedding the corpus and
+  `search_query` when embedding a question, and getting that wrong quietly
+  costs accuracy with no error. Titan uses one call for both, so that mistake
+  is impossible. A model with fewer ways to be wrong is worth something.
+- **Mixing vectors from two models is a silent failure, so make it loud.**
+  Comparing a question embedded by one model against articles embedded by
+  another returns plausible nonsense. `check_embedder_matches` reads the
+  `model` column at startup and refuses to run on a mismatch. This is the kind
+  of bug that costs an afternoon.
+- **An aggregate over a language you no longer serve is misleading.** Overall
+  hit@10 reads 0.77, down from 0.86, purely because the 30 Kyrgyz questions
+  now measure nothing. The honest comparison is the 95 questions in the
+  languages actually searched.
+- **A re-embed through an API costs cents and minutes.** The local model took
+  about two hours of laptop CPU for three languages. Titan did two languages in
+  roughly twenty minutes for about two cents, most of it spent writing rows
+  rather than calling the API.
+
+### Interview questions
+- *How did you choose your embedding model?* By measuring. A labelled set of
+  125 questions scored the old local model, then the new one, on the same
+  queries. English MRR went from 0.705 to 0.801.
+- *What stops you comparing vectors from two different models?* The `model`
+  column on every embedding row and a startup check that refuses to run when
+  the stored model is not the one embedding questions. Without it the failure
+  is silent - results come back ranked and meaningless.
+- *Why not Cohere, which is better at multilingual?* Third-party Bedrock models
+  need an AWS Marketplace subscription, and this project's IAM user is
+  deliberately restricted to Bedrock invoke permissions only. Titan is Amazon's
+  own, needed no account change, and turned out to be enough.
+- *Why did you drop a language?* Measurement. Kyrgyz scored hit@10 0.53 against
+  0.94 for English, because PostgreSQL has no Kyrgyz stemmer and the embedding
+  model placed Kyrgyz badly. A separate experiment showed that translating a
+  Kyrgyz question before searching reaches 0.93-0.97, so the language is still
+  served - just not by its own index.

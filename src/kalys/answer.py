@@ -33,7 +33,7 @@ import psycopg
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
-from kalys.embed import LocalEmbedder
+from kalys.embed import check_embedder_matches, embedder_from_env
 from kalys.search import hybrid_search
 
 load_dotenv()
@@ -229,10 +229,11 @@ def answer(conn, embedder, bedrock, question: str, limit: int = TOP_N) -> str:
 
 def main() -> None:
     question = " ".join(sys.argv[1:]) or input("Question: ")
-    embedder = LocalEmbedder()
+    embedder = embedder_from_env()
     bedrock = BedrockClient()
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
+        check_embedder_matches(conn, embedder)
         print(answer(conn, embedder, bedrock, question))
 
 

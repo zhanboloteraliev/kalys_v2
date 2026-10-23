@@ -79,26 +79,23 @@ which runs the same search the chat uses and calls no paid API.
 
 | Language | Questions | hit@10 | MRR |
 | --- | --- | --- | --- |
-| English | 65 | 0.94 | 0.705 |
-| Russian | 30 | 0.97 | 0.756 |
-| Kyrgyz | 30 | 0.60 | 0.351 |
-| **All** | **125** | **0.86** | **0.632** |
+| English | 65 | 0.98 | 0.801 |
+| Russian | 30 | 0.97 | 0.773 |
+| **Both** | **95** | **0.979** | **0.792** |
 
 *hit@10* is the share of questions where a correct article is in the top 10,
 which is what the model is shown. *MRR* averages 1/rank of the first correct
 article, so being right at rank 1 counts for more than being right at rank 9.
 
-**Kyrgyz is the weak point, and the overall average hides it.** Both halves of
-the hybrid search fail there: PostgreSQL has no Kyrgyz stemmer, so keyword
-search matches whole words only while Kyrgyz builds meaning with suffixes; and
-the multilingual embedding model encodes Kyrgyz poorly, so the question does
-not land near the right articles even in the shared vector space. Fixing this
-is the next piece of work, and the numbers above are the baseline to beat.
-
-An experiment (`eval/translation_experiment.py`) shows the way out: translating
-a Kyrgyz question into English before searching lifts Kyrgyz from hit@10 0.53 to
-**0.97**. The articles were always findable - the Kyrgyz *query* was the part
-that did not work.
+**Kyrgyz is served differently.** Searched directly it reached only hit@10 0.53,
+because PostgreSQL has no Kyrgyz stemmer - keyword search matches whole words
+only, while Kyrgyz builds meaning with suffixes - and the embedding model
+placed Kyrgyz poorly in the vector space. An experiment
+(`eval/translation_experiment.py`) showed the articles were always findable and
+the Kyrgyz *query* was the problem: translating the question first reaches
+0.93-0.97. So Kyrgyz is no longer its own search index. A Kyrgyz question is
+translated into Russian, searched as Russian, and the answer translated back.
+The Kyrgyz source text is untouched - it is a source of truth, not an index.
 
 ## Disclaimer
 

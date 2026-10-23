@@ -22,7 +22,7 @@ import chainlit as cl
 import psycopg
 
 from kalys.answer import BedrockClient, build_prompt, gather_contexts
-from kalys.embed import LocalEmbedder
+from kalys.embed import check_embedder_matches, embedder_from_env
 from kalys.limits import (
     DAY_LIMIT_MESSAGE,
     SESSION_LIMIT_MESSAGE,
@@ -34,7 +34,7 @@ from kalys.limits import (
 SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 
-embedder = LocalEmbedder()
+embedder = embedder_from_env()
 bedrock = BedrockClient()
 
 
@@ -66,6 +66,7 @@ async def on_message(message: cl.Message) -> None:
         return
 
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+        check_embedder_matches(conn, embedder)
         conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
         if day_limit_reached(conn):
             await cl.Message(content=DAY_LIMIT_MESSAGE).send()

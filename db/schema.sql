@@ -88,6 +88,18 @@ ALTER TABLE embeddings DROP CONSTRAINT IF EXISTS embeddings_edition_id_number_la
 CREATE UNIQUE INDEX IF NOT EXISTS idx_embeddings_unique
     ON embeddings (edition_id, number, lang, part);
 
+-- Step 14: the embedding model changed from a local 768-dimension
+-- sentence-transformers model to Amazon Titan Text Embeddings V2, which
+-- returns 1024. Vectors from two different models cannot be compared, so the
+-- old rows are deleted rather than converted. Deleting first also lets the
+-- column type change, which PostgreSQL refuses while rows of the old width
+-- remain. All of this is safe to re-run: on the second run nothing matches
+-- the DELETE and the type is already correct.
+DELETE FROM embeddings WHERE model <> 'amazon.titan-embed-text-v2:0';
+DROP INDEX IF EXISTS idx_embeddings_vec;
+ALTER TABLE embeddings ALTER COLUMN embedding TYPE vector(1024);
+CREATE INDEX IF NOT EXISTS idx_embeddings_vec ON embeddings USING hnsw (embedding vector_cosine_ops);
+
 -- Step 11: how many questions have been answered on each day. Used to stop
 -- the day's Bedrock spending at a fixed ceiling. Kept in PostgreSQL rather
 -- than in the process's memory on purpose: a counter in memory resets every

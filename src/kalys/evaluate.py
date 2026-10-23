@@ -21,7 +21,7 @@ from pathlib import Path
 
 import psycopg
 
-from kalys.embed import LocalEmbedder
+from kalys.embed import check_embedder_matches, embedder_from_env
 from kalys.search import hybrid_search
 
 QUESTIONS_FILE = Path("eval/questions.jsonl")
@@ -197,8 +197,9 @@ def report(records: list[dict]) -> str:
 
 def main() -> None:
     questions = load_questions()
-    embedder = LocalEmbedder()
+    embedder = embedder_from_env()
     with psycopg.connect(DATABASE_URL) as conn:
+        check_embedder_matches(conn, embedder)
         records = run(conn, embedder, questions)
 
     REPORT_FILE.write_text(report(records), encoding="utf-8")

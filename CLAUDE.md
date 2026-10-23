@@ -220,6 +220,24 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   the model gave the correct rule but mis-computed the deadline in both
   directions, once producing a time before the detention. Improved, not solved:
   it still computes despite the instruction.
+- Step 14 (new embedding model, Kyrgyz dropped as a search language): done.
+  `BedrockEmbedder` (Amazon Titan Text Embeddings V2, 1024 dims) replaces the
+  local sentence-transformers model; `embedder_from_env()` picks it, and
+  `KALYS_EMBEDDER=local` selects the old one. `LANGUAGES` is now
+  `("en", "ru")` - 8,884 embeddings. Result on the 95 en/ru questions: hit@10
+  **0.979**, MRR **0.792**; English MRR 0.705 -> **0.801**, Russian 0.756 ->
+  0.773. Overall hit@10 reads 0.77 only because the 30 Kyrgyz questions now
+  measure nothing until the routing below is built.
+  Three things to remember: Cohere models on Bedrock need an AWS Marketplace
+  subscription (`aws-marketplace:Subscribe`) that `kalysdev` does not have, and
+  the failure is reported as AccessDenied - read the full message; Titan is
+  symmetric so there is no `input_type` to get wrong; and
+  `check_embedder_matches` runs at startup everywhere and refuses to search
+  when the stored vectors came from a different model than the one embedding
+  the question. Re-embedding costs about $0.02 and ~20 minutes.
+  **Still to build:** a Kyrgyz question must be translated into Russian,
+  searched as Russian, and the answer translated back. Until then Kyrgyz
+  questions do not work. See the Step 14 entry in `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

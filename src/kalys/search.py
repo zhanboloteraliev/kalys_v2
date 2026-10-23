@@ -33,7 +33,7 @@ from pathlib import Path
 
 import psycopg
 
-from kalys.embed import LocalEmbedder, vector_literal
+from kalys.embed import check_embedder_matches, embedder_from_env, vector_literal
 
 SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
@@ -43,8 +43,13 @@ RRF_K = 60  # a standard RRF constant: big enough that rank 1 vs. rank 2 is not 
 # leaves enough room to still return `limit` distinct articles after parts of
 # the same article are collapsed together.
 PARTS_PER_ARTICLE = 5
-LANGUAGES = ("en", "ru", "kg")
-TEXT_SEARCH_CONFIG = {"en": "english", "ru": "russian", "kg": "simple"}
+LANGUAGES = ("en", "ru")
+# Step 14: Kyrgyz was dropped as a search language. PostgreSQL has no Kyrgyz
+# stemmer, so `simple` matched whole words only while Kyrgyz builds meaning
+# with suffixes, and the embedding model placed Kyrgyz badly. Measured at
+# hit@10 0.53 against 0.94 for English. A Kyrgyz question is now translated
+# into Russian and searched as Russian instead.
+TEXT_SEARCH_CONFIG = {"en": "english", "ru": "russian"}
 
 
 def keyword_search(conn, query: str, lang: str, limit: int = TOP_N) -> list[tuple[int, str]]:
@@ -151,9 +156,10 @@ def describe(conn, edition_id: int, number: str) -> str:
 
 def main() -> None:
     query = " ".join(sys.argv[1:]) or input("Search: ")
-    embedder = LocalEmbedder()
+    embedder = embedder_from_env()
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
+        check_embedder_matches(conn, embedder)
         for edition_id, number in hybrid_search(conn, embedder, query):
             print(describe(conn, edition_id, number))
 

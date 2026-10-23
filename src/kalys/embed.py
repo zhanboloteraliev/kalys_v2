@@ -18,14 +18,30 @@ Run:
   uv run python -m kalys.embed
 """
 
+import json
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psycopg
 
 from kalys.chunk import chunk_text, split_into_parts
 
-EMBEDDING_MODEL = "paraphrase-multilingual-mpnet-base-v2"
+LOCAL_EMBEDDING_MODEL = "paraphrase-multilingual-mpnet-base-v2"
+BEDROCK_EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
+EMBEDDING_DIMENSIONS = 1024  # must match the vector(...) width in db/schema.sql
+BEDROCK_REGION = os.environ.get("AWS_REGION", "us-east-1")
+BEDROCK_MAX_RETRIES = 5  # waits 4, 8, 16, 32, 64 seconds on a throttling error
+RETRYABLE_ERROR_CODES = (
+    "ThrottlingException",
+    "ServiceUnavailableException",
+    "ModelTimeoutException",
+)
+# Titan embeds one text per request, so the only way to go faster is to send
+# several requests at once. Eight is well inside the default account limits.
+BEDROCK_EMBED_WORKERS = 8
+
 SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 
@@ -34,7 +50,7 @@ class LocalEmbedder:
     """Wraps a local sentence-embedding model. Tests use a fake with the same
     `encode` method, so they do not need to download a model."""
 
-    def __init__(self, model_name: str = EMBEDDING_MODEL):
+    def __init__(self, model_name: str = LOCAL_EMBEDDING_MODEL):
         from sentence_transformers import SentenceTransformer  # slow import, so it is lazy
 
         self.model_name = model_name
@@ -42,6 +58,85 @@ class LocalEmbedder:
 
     def encode(self, texts: list[str]) -> list[list[float]]:
         return self.model.encode(texts, normalize_embeddings=True).tolist()
+
+
+class BedrockEmbedder:
+    """Amazon Titan Text Embeddings V2, through Bedrock.
+
+    Replaces the local model, which handled Russian poorly and Kyrgyz badly
+    (see the Step 12 entry in LEARNING.md). Titan was chosen over Cohere only
+    because Cohere models on Bedrock need an AWS Marketplace subscription that
+    this account does not have; Titan is Amazon's own and needs none.
+
+    Titan is symmetric: the same call embeds a document and a question. Cohere
+    is not - it needs `input_type` set differently for each, and getting that
+    wrong quietly costs accuracy - so there is one less way to be wrong here.
+
+    It accepts one text per request, so `encode` sends several requests at
+    once. Tests use a fake with the same `encode` method.
+    """
+
+    def __init__(self, model_name: str = BEDROCK_EMBEDDING_MODEL, client=None, sleep=time.sleep):
+        import boto3  # slow import, so it is lazy
+
+        self.model_name = model_name
+        self.client = client or boto3.client("bedrock-runtime", region_name=BEDROCK_REGION)
+        self.sleep = sleep  # a parameter so tests can run without real waiting
+
+    def _encode_one(self, text: str) -> list[float]:
+        from botocore.exceptions import ClientError
+
+        body = json.dumps(
+            {"inputText": text, "dimensions": EMBEDDING_DIMENSIONS, "normalize": True}
+        )
+        for attempt in range(BEDROCK_MAX_RETRIES + 1):
+            try:
+                response = self.client.invoke_model(modelId=self.model_name, body=body)
+                return json.loads(response["body"].read())["embedding"]
+            except ClientError as error:
+                code = error.response.get("Error", {}).get("Code")
+                if code not in RETRYABLE_ERROR_CODES or attempt == BEDROCK_MAX_RETRIES:
+                    raise
+                self.sleep(2 ** (attempt + 2))
+        raise RuntimeError("unreachable")
+
+    def encode(self, texts: list[str]) -> list[list[float]]:
+        if len(texts) == 1:  # the common case when answering a question
+            return [self._encode_one(texts[0])]
+        with ThreadPoolExecutor(max_workers=BEDROCK_EMBED_WORKERS) as pool:
+            return list(pool.map(self._encode_one, texts))
+
+
+def embedder_from_env():
+    """The embedder named by KALYS_EMBEDDER: 'bedrock' (default) or 'local'.
+
+    The vectors stored in the database and the vector made from a question
+    must come from the same model, or the comparison between them is
+    meaningless. `check_embedder_matches` enforces that at startup.
+    """
+    choice = os.environ.get("KALYS_EMBEDDER", "bedrock").lower()
+    if choice == "local":
+        return LocalEmbedder()
+    if choice == "bedrock":
+        return BedrockEmbedder()
+    raise ValueError(f"KALYS_EMBEDDER must be 'bedrock' or 'local', not {choice!r}")
+
+
+def check_embedder_matches(conn, embedder) -> None:
+    """Fail loudly if the stored vectors came from a different model.
+
+    Comparing a question embedded by one model against articles embedded by
+    another returns results that look plausible and are nonsense. That is a
+    silent failure, and the whole point of this check is to make it noisy.
+    """
+    rows = conn.execute("SELECT DISTINCT model FROM embeddings").fetchall()
+    stored = {model for (model,) in rows}
+    if stored and stored != {embedder.model_name}:
+        raise RuntimeError(
+            f"embeddings in the database were made by {sorted(stored)}, but questions "
+            f"are being embedded by {embedder.model_name!r}. Re-run "
+            f"`python -m kalys.embed`, or set KALYS_EMBEDDER to match."
+        )
 
 
 def article_chunks(rows: list[tuple[int, str, str, str]]) -> list[tuple[int, str, str, str]]:
@@ -128,14 +223,17 @@ def embed_language(conn, embedder, lang: str, rows: list[tuple[int, str, str, st
 
 
 def main() -> None:
-    embedder = LocalEmbedder()
+    embedder = embedder_from_env()
     with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
         conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
 
+        # Kyrgyz is no longer a search language (Step 14): a Kyrgyz question
+        # is translated into Russian and searched as Russian. The Kyrgyz
+        # source text stays in `articles` untouched - it is a source of truth,
+        # not a search index.
         by_language = {
             "en": current_translations(conn),
             "ru": current_edition_originals(conn, "ru"),
-            "kg": current_edition_originals(conn, "kg"),
         }
         saved = 0
         for lang, rows in by_language.items():
