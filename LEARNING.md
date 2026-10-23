@@ -1145,3 +1145,78 @@ Across the 95 English and Russian questions: hit@10 0.979, MRR 0.792.
   model placed Kyrgyz badly. A separate experiment showed that translating a
   Kyrgyz question before searching reaches 0.93-0.97, so the language is still
   served - just not by its own index.
+
+## Step 15: serving Kyrgyz by routing it through Russian
+
+### What we built
+`src/kalys/kyrgyz.py`. A Kyrgyz question is translated into Russian, searched
+and answered in Russian, and the answer is translated back into Kyrgyz. Wired
+into `answer()` and into the chat. English and Russian questions are untouched
+and cost no extra call: a question in Latin script never reaches the model at
+all, which keeps English, the default language, free.
+
+### What it bought
+
+| Kyrgyz | hit@5 | hit@10 | MRR |
+| --- | --- | --- | --- |
+| its own index, old model | 0.43 | 0.53 | 0.349 |
+| its own index, after chunking | - | 0.60 | 0.351 |
+| **via Russian, measured end to end** | **0.967** | **0.967** | **0.756** |
+
+All three languages now sit near 0.97 for hit@10, where Kyrgyz began at 0.53.
+
+### What we learned
+- **The translation step became the new source of errors, and they are the
+  dangerous kind.** The first run scored 0.90, and reviewing all thirty
+  translations showed that three of the four misses were mistranslations, each
+  plausible and each pointing at the wrong article: `күрөө` (bail) became
+  `поручительство` (surety, a different measure of restraint), `кыйноо`
+  (torture, Article 137) became `истязание` (torment, Article 138), and
+  `шектүү` (suspect) became `лица с ограниченными возможностями` (persons with
+  disabilities). A near synonym in law is usually a different article.
+- **It also answered the question instead of translating it.** "What is needed
+  to search a home?" came back as "a court decision is required to search a
+  home" - a fact the question never contained. Telling it to keep a question a
+  question fixed that.
+- **Reading every output mattered more than the score.** 0.90 looked like a
+  success. The three mistranslations were only visible by reading the thirty
+  Russian questions one by one, and they are exactly the failure a user would
+  never notice: a confident answer about the wrong article.
+- **Tightening the prompt was measured, and the honesty matters.** hit@5 went
+  0.833 to 0.967 and hit@10 0.900 to 0.967. But the new rules were written
+  after seeing which questions failed, so the true number on unseen questions
+  will be a little lower. The rules were kept general - use the term the codes
+  use, keep a question a question - rather than listing the words that had
+  failed, which would have been writing the answers into the test.
+- **The answer is translated rather than written in Kyrgyz.** Step 9 found
+  Kyrgyz was the language the model followed instructions in worst. Checked end
+  to end: the translated answer kept 45 hours, 21 hours, 48 hours and 24 hours
+  each attached to its own rule, and kept the English disclaimer on its own
+  line - the two things Step 9 saw break.
+- **Streaming had to be given up for Kyrgyz.** The answer must be finished in
+  Russian before it can be translated, so the chat cannot type it out piece by
+  piece. Streaming Russian and then replacing it with Kyrgyz would be worse
+  than a short wait.
+- **A marker beats comparing strings.** The model replies with `SAME` when a
+  question is not Kyrgyz. Asking it to "return the question unchanged" and
+  checking whether it changed would misfire, because a model asked to repeat
+  text often rewords it slightly, and any difference would look like a
+  translation.
+
+### Interview questions
+- *You dropped a language from your search index. Did users lose it?* No - it
+  moved from being indexed to being translated. Kyrgyz went from hit@10 0.53 on
+  its own index to 0.967 routed through Russian.
+- *What broke when you added a translation step?* It introduced a new class of
+  error: a near-synonym in a legal term silently retrieves a different article.
+  Torture and torment are adjacent articles one word apart. The fix was to tell
+  the model to use the term the codes themselves use, and the check was reading
+  all thirty translations, not just the score.
+- *Why translate the answer instead of writing it in Kyrgyz?* Earlier testing
+  showed Kyrgyz was the language the model followed instructions in worst -
+  it invented an age limit and translated a disclaimer it was told to keep.
+  Translating a finished answer is a narrower task than writing one under
+  constraints.
+- *How do you know a question is Kyrgyz?* Latin script is never Kyrgyz, so it
+  skips the call entirely. Anything with Cyrillic goes to the model, which
+  either returns a Russian translation or a marker meaning "not Kyrgyz".

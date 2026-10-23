@@ -34,6 +34,7 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from kalys.embed import check_embedder_matches, embedder_from_env
+from kalys.kyrgyz import answer_to_kyrgyz, question_to_russian
 from kalys.search import hybrid_search
 
 load_dotenv()
@@ -136,18 +137,21 @@ class BedrockClient:
         self.model = model
         self.sleep = sleep  # a parameter so tests can run without real waiting
 
-    def _request_body(self, prompt: str) -> str:
+    def _request_body(self, prompt: str, system: str = SYSTEM_PROMPT) -> str:
         return json.dumps(
             {
                 "anthropic_version": "bedrock-2023-05-31",
                 "max_tokens": BEDROCK_MAX_ANSWER_TOKENS,
-                "system": SYSTEM_PROMPT,
+                "system": system,
                 "messages": [{"role": "user", "content": prompt}],
             }
         )
 
-    def ask(self, prompt: str) -> str:
-        body = self._request_body(prompt)
+    def ask(self, prompt: str, system: str = SYSTEM_PROMPT) -> str:
+        """One full answer. `system` is a parameter so the same client can be
+        reused for the small translation calls in `kalys.kyrgyz`, which need a
+        different instruction but the same retry behaviour."""
+        body = self._request_body(prompt, system)
         for attempt in range(BEDROCK_MAX_RETRIES + 1):
             try:
                 response = self.client.invoke_model(modelId=self.model, body=body)
@@ -221,10 +225,18 @@ def gather_contexts(conn, embedder, question: str, limit: int = TOP_N) -> list[A
 
 
 def answer(conn, embedder, bedrock, question: str, limit: int = TOP_N) -> str:
-    contexts = gather_contexts(conn, embedder, question, limit)
+    """Answer one question, in the language it was asked in.
+
+    A Kyrgyz question is searched and answered in Russian and the answer is
+    translated back, because Kyrgyz search did not work (see `kalys.kyrgyz`).
+    English and Russian questions are untouched and cost no extra call.
+    """
+    search_question, was_kyrgyz = question_to_russian(bedrock, question)
+    contexts = gather_contexts(conn, embedder, search_question, limit)
     if not contexts:
         return "No matching articles were found for this question."
-    return bedrock.ask(build_prompt(question, contexts))
+    text = bedrock.ask(build_prompt(search_question, contexts))
+    return answer_to_kyrgyz(bedrock, text) if was_kyrgyz else text
 
 
 def main() -> None:

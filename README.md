@@ -67,7 +67,7 @@ per second, a clear User-Agent with contact info, and a local cache, so each pag
 - [x] A labelled evaluation set, to measure retrieval instead of guessing at it
 - [x] Find out why Kyrgyz retrieval is weak, and measure a fix
 - [x] Embed each article by part as well as whole, and measure it
-- [ ] Build the Kyrgyz query fix into the chat
+- [x] Build the Kyrgyz routing into the chat
 - [ ] HTTPS and a public address
 - [ ] More acts: the other in-force codes
 
@@ -81,7 +81,7 @@ which runs the same search the chat uses and calls no paid API.
 | --- | --- | --- | --- |
 | English | 65 | 0.98 | 0.801 |
 | Russian | 30 | 0.97 | 0.773 |
-| **Both** | **95** | **0.979** | **0.792** |
+| Kyrgyz (via Russian) | 30 | 0.967 | 0.756 |
 
 *hit@10* is the share of questions where a correct article is in the top 10,
 which is what the model is shown. *MRR* averages 1/rank of the first correct

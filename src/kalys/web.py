@@ -15,6 +15,7 @@ Run:
   uv run chainlit run src/kalys/web.py -w
 """
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import psycopg
 
 from kalys.answer import BedrockClient, build_prompt, gather_contexts
 from kalys.embed import check_embedder_matches, embedder_from_env
+from kalys.kyrgyz import answer_to_kyrgyz, question_to_russian
 from kalys.limits import (
     DAY_LIMIT_MESSAGE,
     SESSION_LIMIT_MESSAGE,
@@ -71,7 +73,11 @@ async def on_message(message: cl.Message) -> None:
         if day_limit_reached(conn):
             await cl.Message(content=DAY_LIMIT_MESSAGE).send()
             return
-        contexts = gather_contexts(conn, embedder, question)
+        # A Kyrgyz question is searched and answered in Russian, then the
+        # answer is translated back (see kalys.kyrgyz). English and Russian
+        # questions pass through untouched.
+        search_question, was_kyrgyz = question_to_russian(bedrock, question)
+        contexts = gather_contexts(conn, embedder, search_question)
         if contexts:
             # Counted before the answer is generated, not after: a question
             # that fails halfway still cost a Bedrock call, and counting only
@@ -83,7 +89,20 @@ async def on_message(message: cl.Message) -> None:
         return
 
     cl.user_session.set("asked", asked + 1)
-    prompt = build_prompt(question, contexts)
+    prompt = build_prompt(search_question, contexts)
+
+    if was_kyrgyz:
+        # The answer cannot be streamed here: it has to be finished in Russian
+        # before it can be translated, and streaming Russian only to replace it
+        # with Kyrgyz would be worse than a short wait.
+        reply = cl.Message(content="")
+        await reply.send()
+        async with cl.Step(name="Жооп даярдалууда", type="run"):
+            russian = await asyncio.to_thread(bedrock.ask, prompt)
+            reply.content = await asyncio.to_thread(answer_to_kyrgyz, bedrock, russian)
+        await reply.update()
+        return
+
     reply = cl.Message(content="")
     await reply.send()
     for piece in bedrock.ask_stream(prompt):

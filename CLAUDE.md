@@ -235,9 +235,21 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   `check_embedder_matches` runs at startup everywhere and refuses to search
   when the stored vectors came from a different model than the one embedding
   the question. Re-embedding costs about $0.02 and ~20 minutes.
-  **Still to build:** a Kyrgyz question must be translated into Russian,
-  searched as Russian, and the answer translated back. Until then Kyrgyz
-  questions do not work. See the Step 14 entry in `LEARNING.md`.
+  See the Step 14 entry in `LEARNING.md`.
+- Step 15 (Kyrgyz routed through Russian): done. `src/kalys/kyrgyz.py`
+  translates a Kyrgyz question into Russian, searches and answers in Russian,
+  and translates the answer back. Wired into `answer()` and the chat. A
+  question in Latin script never calls the model, so English costs nothing
+  extra. Kyrgyz went from hit@10 0.53 to **0.967**, MRR 0.349 to **0.756** -
+  all three languages are now near 0.97. Two things to remember: the
+  translation step introduces near-synonym errors that silently retrieve the
+  wrong article (`кыйноо`/torture became `истязание`/torment, Article 137 vs
+  138), which is why the prompt insists on the term the codes use; and those
+  prompt rules were written after seeing which eval questions failed, so the
+  real number on unseen questions is a little lower than 0.967. Kyrgyz answers
+  are not streamed - the answer has to be finished in Russian before it can be
+  translated. A Kyrgyz question costs 3 Bedrock calls instead of 1. See the
+  Step 15 entry in `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
