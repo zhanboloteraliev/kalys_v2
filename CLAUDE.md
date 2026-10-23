@@ -250,6 +250,30 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   are not streamed - the answer has to be finished in Russian before it can be
   translated. A Kyrgyz question costs 3 Bedrock calls instead of 1. See the
   Step 15 entry in `LEARNING.md`.
+- Step 16 (deploy the new model and the Kyrgyz routing): done and verified on
+  2026-10-22. The instance role's `KalysBedrockInvoke` policy was scoped to
+  `anthropic.*` only, so the owner added
+  `arn:aws:bedrock:*::foundation-model/amazon.titan-embed-text-v2:0` to it -
+  without that, embedding on the server fails with AccessDenied, the same shape
+  of trap as the Step 10 permissions boundary. No database dump was needed:
+  only the `embeddings` table changed, so `python -m kalys.embed` was re-run on
+  the box (8,884 Titan vectors, about $0.02, ~20 minutes, mostly row inserts).
+  Verified end to end on the server with a real Kyrgyz question - the instance
+  role reaches both Titan and Claude, the answer came back in Kyrgyz, cited
+  Article 205 **by part** (parts 1-4), kept every figure, and kept the English
+  disclaimer on its own line.
+  **Measured after dropping the local model:** the app starts in **2 seconds**
+  (was ~60 with PyTorch) and uses **~30 MB** (was ~1,500 MB); the whole box
+  uses 837 MB of 3,831. So cold start is now essentially just EC2 boot (~35s),
+  and a 2 GB instance fits: `t3.small` ~$15/month is a stop-resize-start on the
+  current instance, `t4g.small` ~$12/month needs relaunching on an ARM image.
+  This is what makes the owner's "sleep the instance and show the GIF while it
+  wakes" plan workable - it was not, at ~100 seconds.
+  One defect seen: in one citation of four the act name came back garbled
+  ("Өйрөп Республикасынын" instead of "Кыргыз Республикасынын"). The article
+  number, part and edition date were correct in all four - those are what the
+  translation prompt protects - so the damage is cosmetic, but the act name is
+  not currently protected and should be.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
