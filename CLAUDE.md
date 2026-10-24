@@ -35,10 +35,10 @@
 
 ## Never
 - Never commit secrets, `.env`, or downloaded data (`data/` is git-ignored).
-- No DNS work until the owner asks. (Later: Route 53 hosted zone for
-  `kalys.eraliev.com`, delegated with NS records from the current DNS provider.)
-  Note: the owner has asked for AWS Bedrock (Step 7) and for deploying to EC2
-  (Step 10) - this rule now applies to DNS only.
+- DNS: the owner asked for this on 2026-10-24, so it is no longer blocked. The
+  domain is at **Porkbun**, not Route 53, and `eraliev.com` also serves the
+  owner's portfolio - so only add the one `kalys` A record and never touch the
+  other records. Route 53 is not needed and would cost $0.50/month for nothing.
 - Never create, change, or delete AWS resources on the owner's behalf. The
   `kalysdev` key is Bedrock-only by design and must stay that way; console
   steps (instances, roles, security groups) are the owner's to run. See
@@ -301,6 +301,28 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   To go back: stop, Actions -> Instance settings -> Change instance type ->
   `t3.medium`, start. Stay in the `t3` family; `t4g` is ARM and the existing
   disk will not boot.
+- Step 18 (public access: HTTPS and a robot gate): server side done
+  2026-10-24, waiting on the owner's console steps. `src/kalys/gate.py` puts a
+  Cloudflare Turnstile challenge in front of the chat: a small page with the
+  widget, a server-side siteverify call, and a short-lived HMAC-signed cookie.
+  It is installed on Chainlit's own FastAPI app, so it covers the **websocket**
+  as well as the page - gating only the page would let a bot talk straight to
+  the socket. It turns itself off unless all four of `TURNSTILE_SITEKEY`,
+  `TURNSTILE_SECRET`, `TURNSTILE_HOSTNAMES` and `KALYS_GATE_SECRET` are set, so
+  local runs and the SSM tunnel keep working. `KALYS_GATE_SECRET` is already
+  generated in `.env` on the instance (mode 600, never committed).
+  `deploy/Caddyfile` terminates HTTPS and proxies to 127.0.0.1:8000; Caddy
+  2.11.7 is installed and the config validates, but the service is deliberately
+  **disabled** until DNS resolves, because Let's Encrypt limits failed
+  certificate attempts per hostname and attempts before DNS exists cannot
+  succeed. Enable it with `systemctl enable --now caddy` once the A record is
+  live.
+  **Owner's remaining steps:** allocate and associate an Elastic IP; add an `A`
+  record for host `kalys` at Porkbun pointing at it; open ports 80 and 443 in
+  `sg-02890acd42ec0fbc3` (80 is required for the ACME check; never open 8000);
+  create a Turnstile widget for `kalys.eraliev.com` in Managed mode and put the
+  secret key into `.env` on the instance. See the Step 18 entry in
+  `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

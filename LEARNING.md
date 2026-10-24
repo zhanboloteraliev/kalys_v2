@@ -1220,3 +1220,71 @@ All three languages now sit near 0.97 for hit@10, where Kyrgyz began at 0.53.
 - *How do you know a question is Kyrgyz?* Latin script is never Kyrgyz, so it
   skips the call entirely. Anything with Cyrillic goes to the model, which
   either returns a Russian translation or a marker meaning "not Kyrgyz".
+
+## Step 18: a robot gate, and HTTPS
+
+### What we built
+`src/kalys/gate.py`: a Cloudflare Turnstile challenge in front of the chat, and
+`deploy/Caddyfile` for automatic HTTPS. The gate serves a small page with the
+widget, checks the returned token with Cloudflare from the server, and issues a
+short-lived cookie signed with HMAC. No cookie, no chat.
+
+### Why
+The Step 11 cap protects the budget but not the service. An open chat endpoint
+that automated traffic finds would have its 100 daily questions spent by
+robots, leaving nothing for the people the site is for. A public address is
+found within hours, so going public needs a door - but a password would defeat
+the point of a site meant for anyone to try.
+
+### What we learned
+- **Gate the websocket, not just the page.** The chat talks over Socket.IO. A
+  check on the HTML page alone would be decoration: a bot can open the socket
+  directly and never load the page. Installing the middleware on Chainlit's own
+  FastAPI app covers both, which was worth confirming with a request to
+  `/ws/socket.io` (401 without the cookie, 200 with it) rather than assuming.
+- **Chainlit's catch-all route shadows your own.** A `GET /gate` registered
+  after Chainlit's single-page-app route never ran; the framework answered
+  first and served the chat shell. Routes match in registration order, and a
+  library that registers a catch-all wins everything added later. The fix was
+  to delete the route: the middleware already answers any blocked path with the
+  gate page, so a dedicated URL was never needed.
+- **The vendor's test keys cannot test the success path.** Cloudflare's
+  published "always passes" secret returns `success: true` with **no `action`
+  field** and `hostname: example.com`, so a correct implementation - which
+  checks action and hostname - rejects it. The success path was verified
+  instead by minting a correctly signed cookie against a running server.
+- **An unanswered check is a failed check.** If siteverify times out or returns
+  something that is not JSON, the gate refuses. Letting visitors through on an
+  error would make the gate removable by breaking it.
+- **A gate that rejects everyone looks exactly like a gate that works.** A
+  wrong action or hostname would lock out every real visitor, and the symptom
+  would be silence. A failed check now logs what Cloudflare said and what was
+  expected - no secrets, just the mismatch.
+- **Sign the expiry, do not store it beside the signature.** The cookie is
+  `<expiry>.<hmac of expiry>`, so editing the expiry invalidates it. Comparing
+  signatures with `compare_digest` keeps a wrong guess from being faster than a
+  right one.
+- **Do not start Caddy before DNS exists.** Let's Encrypt limits failed
+  certificate attempts per hostname per hour. Caddy would retry a name that
+  cannot resolve and spend that budget before the real attempt. The config is
+  in place and validated; the service stays disabled until the A record is
+  live.
+- **Make the off switch obvious.** The gate prints which keys are missing at
+  startup. Four environment variables that silently disable security would
+  otherwise be found out the hard way.
+
+### Interview questions
+- *How do you stop bots using a paid API without a login?* A challenge at the
+  door that issues a signed, short-lived cookie, enforced on the websocket as
+  well as the page. The per-session cap then bounds what any visitor who passes
+  can spend.
+- *Where does CAPTCHA verification belong?* On the server. The browser sends a
+  token; the server asks the vendor whether it is real. A browser-side check
+  proves nothing, because whoever controls the browser controls the answer.
+- *What do you check besides "success"?* The action and the hostname. Without
+  those, a token minted by any other page protected by the same key would open
+  your door.
+- *Your CAPTCHA provider has test keys. Did they prove your code works?* Only
+  the failure path. Their "always passes" key omits the action field, so strict
+  verification rejects it - which is correct. The success path needed a
+  different test.
