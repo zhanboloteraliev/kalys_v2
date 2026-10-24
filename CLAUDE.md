@@ -284,6 +284,23 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   number, part and edition date were correct in all four - those are what the
   translation prompt protects - so the damage is cosmetic, but the act name is
   not currently protected and should be.
+- Step 17 (resize to `t3.small`): done 2026-10-24. The instance is now
+  **`t3.small` (2 GB)**, not `t3.medium` - possible only because Step 14 moved
+  embedding to an API and took the app from ~1,500 MB to ~30 MB. Verified after
+  a real stop/resize/start: Postgres and the `kalys` service both returned
+  unattended, launch to app running took **17 seconds** (boot to active 11s),
+  and a real question answered correctly with its citations. Memory: **578 MB
+  of 1,905 idle, 727 MB used and 1,177 MB free after answering**, app RSS 26 MB,
+  **zero out-of-memory kills**. Costs about $15/month if it ever runs all day,
+  against about $30 for `t3.medium`; while stopped both cost the same ~$2.40 of
+  disk, so the saving only matters once the site is public and awake.
+  Concurrency is still unmeasured: the figures above are one user. The load is
+  bounded by the Step 11 cap (100 questions a day), and each concurrent
+  question costs roughly one PostgreSQL backend at 5-10 MB, so there is wide
+  headroom - but run a real concurrent load test before making the site public.
+  To go back: stop, Actions -> Instance settings -> Change instance type ->
+  `t3.medium`, start. Stay in the `t3` family; `t4g` is ARM and the existing
+  disk will not boot.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
