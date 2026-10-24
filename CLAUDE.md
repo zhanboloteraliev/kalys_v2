@@ -212,9 +212,12 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   wash (hit@10 flat, MRR down) - they fixed specific questions and broke general
   ones - so both are kept. Result: hit@10 0.84 -> **0.86**, hit@5 0.77 -> 0.81,
   Kyrgyz 0.53 -> **0.60**, Russian 0.93 -> **0.97**; hit@1 and hit@3 unchanged.
-  A modest win, not the large one predicted. Re-embedding all three languages
-  takes about 2 hours of laptop CPU; never run it on the instance (it peaks
-  around 2 GB). See the Step 13 entry in `LEARNING.md`.
+  A modest win, not the large one predicted. See the Step 13 entry in
+  `LEARNING.md`. (The warning that used to be here - never re-embed on the
+  instance because it peaks around 2 GB - applied to the local PyTorch model
+  and no longer holds. Since Step 14 embedding is an API call, so running
+  `python -m kalys.embed` on the box is light and is now the normal way to
+  update it.)
 - Also added in Step 12: a guard in the system prompt against working out clock
   times and dates. Asked when a court must review a detention begun at 14:00,
   the model gave the correct rule but mis-computed the deadline in both
@@ -262,6 +265,13 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   role reaches both Titan and Claude, the answer came back in Kyrgyz, cited
   Article 205 **by part** (parts 1-4), kept every figure, and kept the English
   disclaimer on its own line.
+  **Cold start measured on 2026-10-24** after a real stop/start: EC2 LaunchTime
+  02:57:21, OS booted 02:57:26, `kalys` active 02:57:37 - **16 seconds from
+  launch to the app running** (`systemd-analyze`: 1.2s kernel + 10.1s
+  userspace). Everything returned unattended. On a fresh boot the box uses
+  **668 MB** of 3,831: Chainlit 138 MB, the Docker daemons ~127 MB, PostgreSQL
+  `shared_buffers` a fixed 128 MB, and 14 GB of the 28 GB disk. A 2 GB instance
+  therefore fits with room to spare.
   **Measured after dropping the local model:** the app starts in **2 seconds**
   (was ~60 with PyTorch) and uses **~30 MB** (was ~1,500 MB); the whole box
   uses 837 MB of 3,831. So cold start is now essentially just EC2 boot (~35s),
