@@ -101,9 +101,28 @@ say "Installing Python dependencies"
 # system's 3.14 and fail to find PyTorch wheels.
 uv sync --quiet --python 3.12
 
-say "Downloading the embedding model"
-# Done now, not on the first question, so the first question is not slow.
-uv run python -c "from kalys.embed import LocalEmbedder; LocalEmbedder(); print('model ready')"
+# The local embedding model is no longer downloaded here. Since Step 14 the
+# embeddings come from Amazon Titan through Bedrock, so the 1.1 GB model and
+# PyTorch are never loaded at runtime. Fetch it only if you intend to run with
+# KALYS_EMBEDDER=local:
+#     uv run python -c "from kalys.embed import LocalEmbedder; LocalEmbedder()"
+
+say "Installing Caddy for HTTPS"
+# Caddy serves kalys.eraliev.com and proxies to the app on 127.0.0.1:8000. It
+# gets its own Let's Encrypt certificate once DNS points here and ports 80 and
+# 443 are open; until then it retries quietly.
+if ! command -v caddy >/dev/null 2>&1; then
+    sudo apt-get install -y debian-keyring debian-archive-keyring apt-transport-https curl
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+        | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+        | sudo tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+    sudo apt-get update
+    sudo apt-get install -y caddy
+fi
+sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
+sudo systemctl enable caddy
+sudo systemctl reload caddy || sudo systemctl restart caddy
 
 say "Installing the service"
 sudo cp deploy/kalys.service /etc/systemd/system/kalys.service
@@ -114,13 +133,25 @@ sudo systemctl --no-pager --lines=0 status kalys.service || true
 
 say "Done"
 cat <<'NOTE'
-Check it answers, from your laptop:
+Check it answers, from your laptop (no SSH: port 22 is closed and the instance
+is reached through SSM Session Manager):
 
-    ssh -i <your-key.pem> -L 8000:localhost:8000 ubuntu@<instance-ip>
+    ./deploy/forward.sh
 
 then open http://localhost:8000 in your browser.
+
+To serve it publicly you also need, outside this script:
+  - an Elastic IP associated with this instance
+  - an A record for kalys.eraliev.com pointing at that address
+  - ports 80 and 443 open in the security group
+  - these in .env, or the robot gate stays off (see src/kalys/gate.py):
+        TURNSTILE_SITEKEY=...
+        TURNSTILE_SECRET=...
+        TURNSTILE_HOSTNAMES=kalys.eraliev.com
+        KALYS_GATE_SECRET=<a long random string>
 
 Useful commands on the instance:
     sudo systemctl restart kalys      # after a git pull
     sudo journalctl -u kalys -f       # live logs
+    sudo journalctl -u caddy -f       # certificate and proxy logs
 NOTE

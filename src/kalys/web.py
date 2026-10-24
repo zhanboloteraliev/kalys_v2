@@ -21,7 +21,9 @@ from pathlib import Path
 
 import chainlit as cl
 import psycopg
+from chainlit.server import app as chainlit_app
 
+from kalys import gate
 from kalys.answer import BedrockClient, build_prompt, gather_contexts
 from kalys.embed import check_embedder_matches, embedder_from_env
 from kalys.kyrgyz import answer_to_kyrgyz, question_to_russian
@@ -37,6 +39,13 @@ SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 
 embedder = embedder_from_env()
+
+# The robot gate goes in front of Chainlit's own FastAPI app, so it also covers
+# the websocket the chat talks over - not just the page. It installs itself only
+# when the Turnstile keys are set, which keeps local runs and the SSM tunnel
+# working with no keys at all.
+print(gate.describe(), flush=True)
+gate.install(chainlit_app)
 bedrock = BedrockClient()
 
 

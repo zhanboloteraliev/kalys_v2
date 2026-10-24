@@ -1,0 +1,23 @@
+# HTTPS for Kalys.
+#
+# Caddy obtains and renews a Let's Encrypt certificate by itself. It needs two
+# things to succeed, both outside this file: kalys.eraliev.com must already
+# point at this machine, and ports 80 and 443 must be open in the security
+# group. Until then Caddy keeps retrying, which is harmless - the site is
+# simply not reachable yet.
+#
+# The app stays bound to 127.0.0.1:8000 and is never published directly, so the
+# only way in is through this proxy. Caddy upgrades WebSocket connections on
+# its own, which the chat needs, and sets X-Forwarded-For, which the Turnstile
+# check uses to tell Cloudflare who the visitor is.
+#
+# Change the hostname here if the domain ever changes.
+
+kalys.eraliev.com {
+	encode zstd gzip
+
+	# Let's Encrypt emails this address before a certificate expires.
+	tls ezhanbolot@gmail.com
+
+	reverse_proxy 127.0.0.1:8000
+}
