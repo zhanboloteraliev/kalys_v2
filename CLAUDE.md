@@ -324,11 +324,19 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   certificate attempts per hostname and attempts before DNS exists cannot
   succeed. Enable it with `systemctl enable --now caddy` once the A record is
   live.
-  **Owner's remaining steps:** allocate and associate an Elastic IP; add an `A`
-  record for host `kalys` at Porkbun pointing at it; open ports 80 and 443 in
-  `sg-02890acd42ec0fbc3` (80 is required for the ACME check; never open 8000);
-  create a Turnstile widget for `kalys.eraliev.com` in Managed mode and put the
-  secret key into `.env` on the instance. See the Step 18 entry in
+  **Live since 2026-10-25 at https://kalys.eraliev.com.** Elastic IP
+  **184.194.188.123** is associated with the instance (it costs ~$3.65/month
+  whether or not the instance runs - release it if the site is retired). The
+  `A` record for host `kalys` is in the Route 53 zone for `eraliev.com`. Ports
+  80 and 443 are open in `sg-02890acd42ec0fbc3`; 8000 is not, and must stay
+  closed so the gate cannot be bypassed. Caddy holds a Let's Encrypt
+  certificate valid to 2027-01-23 and renews it by itself. All four gate keys
+  are in `.env` on the instance and the log line reads
+  `Turnstile gate ON for kalys.eraliev.com`.
+  Verified from outside: the page and the websocket both return 401 without a
+  pass and a forged cookie is refused; a real browser solved the challenge
+  automatically, reached the chat, and a starter question streamed a correctly
+  cited answer through the WebSocket behind Caddy. See the Step 18 entry in
   `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.

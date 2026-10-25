@@ -10,9 +10,11 @@ and cites the exact source: the act, article, part, and edition date.
 *A real answer from the running app. Every point carries the act, the article number, and
 the edition date it came from.*
 
-> Status: working end to end - 86,527 articles across 91 editions, hybrid search, and
-> answers from Amazon Bedrock grounded in the retrieved text. Runs on AWS. The public site
-> at https://kalys.eraliev.com is not up yet.
+> **Live at [kalys.eraliev.com](https://kalys.eraliev.com).** 86,527 articles across 91
+> editions, hybrid search, and answers from Amazon Bedrock grounded in the retrieved text.
+> Runs on one small AWS instance behind Caddy, with a Cloudflare Turnstile check at the
+> door - every answer costs money, so automated traffic is kept out without asking a
+> visitor for a password.
 
 ## Why it matters
 
