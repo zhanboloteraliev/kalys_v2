@@ -35,10 +35,17 @@
 
 ## Never
 - Never commit secrets, `.env`, or downloaded data (`data/` is git-ignored).
-- DNS: the owner asked for this on 2026-10-24, so it is no longer blocked. The
-  domain is at **Porkbun**, not Route 53, and `eraliev.com` also serves the
-  owner's portfolio - so only add the one `kalys` A record and never touch the
-  other records. Route 53 is not needed and would cost $0.50/month for nothing.
+- DNS: the owner asked for this on 2026-10-24, so it is no longer blocked.
+  **Porkbun is only the registrar; the nameservers are Route 53**
+  (`ns-124.awsdns-15.com` and three more), so DNS records are edited in the
+  Route 53 hosted zone for `eraliev.com`, not at Porkbun - records set at
+  Porkbun are ignored. The zone for the whole domain already exists, so the
+  earlier plan of a separate hosted zone for `kalys.eraliev.com` delegated with
+  NS records is unnecessary: one A record is the whole job, and no second zone
+  is needed. `eraliev.com` also serves the owner's portfolio, so touch only the
+  `kalys` record. `kalysdev` has no Route 53 permissions, by design, so this is
+  the owner's console step and cannot be verified from here except by
+  resolving the name.
 - Never create, change, or delete AWS resources on the owner's behalf. The
   `kalysdev` key is Bedrock-only by design and must stay that way; console
   steps (instances, roles, security groups) are the owner's to run. See
