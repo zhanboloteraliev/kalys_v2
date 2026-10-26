@@ -18,6 +18,10 @@ ACTS = [
         "3-37",
         "Criminal Procedure Code of the Kyrgyz Republic (2021, No. 129)",
     ),
+    # Adopted January 2025, so guides written about the previous Labour Code
+    # are already wrong - the same reason the 2021 reform made this project
+    # worth building. Only 7 editions, the fewest of any code in force.
+    Act("labour_code", "3-45", "Labour Code of the Kyrgyz Republic (2025, No. 23)"),
 ]
 
 # Language codes used by the API. Note: Kyrgyz is "kg" in this API, not the ISO code "ky".

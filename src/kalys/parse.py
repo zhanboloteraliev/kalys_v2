@@ -36,6 +36,18 @@ HEADINGS = {
     "kg": re.compile(r"^(\d+(?:-\d+)?)-берене\.?\s*(.*)$"),
 }
 
+# A few added articles are published without the word "Статья", and with a
+# space inside the number: "65 -1. День голосования на выборах" sits inside the
+# body of article 65 in the Labour Code. The Kyrgyz text gives them a proper
+# heading, so only the Russian side loses them, and the article disappears -
+# in that case a paid day off for voting, which people do ask about.
+#
+# This is accepted as a heading only when the leading number repeats the
+# article it was found inside, and that condition is what makes it safe: the
+# parts within an article are numbered "1.", "2." and never carry the article's
+# own number, so nothing else can match.
+CONTINUATION_HEADING = re.compile(r"^(\d+)\s*-\s*(\d+)\.\s+(\S.*)$")
+
 
 class _BodyTextExtractor(HTMLParser):
     """Turns the Word HTML export into plain text, one paragraph per line."""
@@ -95,8 +107,36 @@ def parse_articles(content: str, lang: str) -> list[Article]:
     articles = []
     for position, (line_index, match) in enumerate(starts):
         end = starts[position + 1][0] if position + 1 < len(starts) else len(lines)
-        body = "\n".join(line for line in lines[line_index + 1 : end] if line)
-        articles.append(Article(number=match.group(1), title=match.group(2), text=body))
+        body_lines = [line for line in lines[line_index + 1 : end] if line]
+        articles.extend(split_continuations(match.group(1), match.group(2), body_lines))
+    return articles
+
+
+def split_continuations(number: str, title: str, body_lines: list[str]) -> list[Article]:
+    """One article, plus any added article buried in its body without a heading.
+
+    See CONTINUATION_HEADING. Returns the article unchanged when there is
+    nothing to split, which is the usual case.
+    """
+    base = number.partition("-")[0]
+    cuts = [
+        (index, match)
+        for index, line in enumerate(body_lines)
+        if (match := CONTINUATION_HEADING.match(line)) and match.group(1) == base
+    ]
+    if not cuts:
+        return [Article(number=number, title=title, text="\n".join(body_lines))]
+
+    articles = [Article(number=number, title=title, text="\n".join(body_lines[: cuts[0][0]]))]
+    for position, (index, match) in enumerate(cuts):
+        end = cuts[position + 1][0] if position + 1 < len(cuts) else len(body_lines)
+        articles.append(
+            Article(
+                number=f"{match.group(1)}-{match.group(2)}",
+                title=match.group(3).strip(),
+                text="\n".join(body_lines[index + 1 : end]),
+            )
+        )
     return articles
 
 
