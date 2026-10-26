@@ -23,17 +23,44 @@ The Kyrgyz source text itself is untouched in `articles`. It is a source of
 truth, not a search index.
 """
 
-# The model answers with exactly this when the question is not Kyrgyz, which
-# is cheaper and far more reliable than comparing the reply to the input: a
-# model asked to "return it unchanged" often rewords a little, and any
-# difference would then look like a translation.
-NOT_KYRGYZ = "SAME"
+import logging
+
+log = logging.getLogger("kalys.kyrgyz")
+
+# The model states the language on the first line and puts a translation on the
+# second. An earlier version asked it to reply "SAME" for a question that was
+# already Russian; it never did. Told elsewhere in the same prompt to use
+# precise legal wording, it rewrote the Russian instead ("милиция" became
+# "полиция"), and any reply that was not the marker counted as a translation -
+# so every Russian question was treated as Kyrgyz and answered in Kyrgyz.
+VERDICT_KYRGYZ = "KYRGYZ"
+VERDICT_RUSSIAN = "RUSSIAN"
+VERDICT_OTHER = "OTHER"
+
+# Kyrgyz uses the Russian alphabet plus these three letters, so finding one
+# proves the text is Kyrgyz. Not finding one proves nothing: plenty of Kyrgyz
+# sentences use none of them, which is why the model is asked as well.
+KYRGYZ_ONLY_LETTERS = frozenset("үөңҮӨҢ")
 
 TO_RUSSIAN_PROMPT = f"""You prepare a question for searching a database of Kyrgyz law.
 
-- If the question is written in Kyrgyz, translate it into Russian.
-- If it is written in any other language, reply with exactly {NOT_KYRGYZ} and nothing else.
-- Reply with the translated question alone: no quotes, no label, no explanation.
+Reply in exactly one of these three forms and nothing else:
+
+  {VERDICT_RUSSIAN}
+  {VERDICT_OTHER}
+  {VERDICT_KYRGYZ}
+  <the question translated into Russian>
+
+Rules:
+- Answer {VERDICT_KYRGYZ} only when the question is written in Kyrgyz, and put the
+  Russian translation on the line after it.
+- Answer {VERDICT_RUSSIAN} when the question is already in Russian. Reply with that
+  one word alone. Do not repeat the question, do not rewrite it, do not improve
+  its wording, and do not translate it. Kyrgyz and Russian use almost the same
+  alphabet, so judge by the words, not by the letters.
+- Answer {VERDICT_OTHER} for any other language, English included.
+
+When translating from Kyrgyz:
 - Translate it as a question. Do not answer it, do not turn it into a
   statement, and do not add any fact the question does not contain.
 - Use the exact term the Criminal Code and the Criminal Procedure Code of the
@@ -69,20 +96,61 @@ def has_cyrillic(text: str) -> bool:
     return any(ord(character) in CYRILLIC_RANGE for character in text)
 
 
+def has_kyrgyz_letters(text: str) -> bool:
+    """Whether the text uses a letter that exists in Kyrgyz but not Russian."""
+    return any(character in KYRGYZ_ONLY_LETTERS for character in text)
+
+
 def question_to_russian(bedrock, question: str) -> tuple[str, bool]:
     """Return (question to search with, whether it was Kyrgyz).
 
-    A question in Latin script is returned untouched without calling the
-    model. Anything with Cyrillic in it is sent to the model, which replies
-    either with a Russian translation or with the marker meaning "not Kyrgyz".
+    A question in Latin script is returned untouched without calling the model,
+    which keeps English - the default language - free.
+
+    Anything with Cyrillic in it is sent to the model, which answers with the
+    language on the first line and, for Kyrgyz, the Russian translation on the
+    second. Three things have to hold before the Kyrgyz path is taken: the
+    verdict says Kyrgyz, there is a translation, and the translation is not
+    simply the question handed back. Anything else is treated as not Kyrgyz.
+
+    Failing that way round is deliberate. Treating Russian as Kyrgyz answers a
+    Russian speaker in a language they may not read, which is plainly broken;
+    treating Kyrgyz as Russian only makes its retrieval worse, which is the
+    situation this module was written to improve. A bad guess should cost
+    quality, not correctness.
     """
     if not has_cyrillic(question):
         return question, False
 
     reply = bedrock.ask(question, system=TO_RUSSIAN_PROMPT).strip()
-    if reply.strip(".").upper() == NOT_KYRGYZ or not reply:
-        return question, False
-    return reply, True
+    first_line, _, rest = reply.partition("\n")
+    verdict = first_line.strip().strip(".:").upper()
+
+    if verdict == VERDICT_KYRGYZ:
+        translation = rest.strip()
+    elif verdict in (VERDICT_RUSSIAN, VERDICT_OTHER):
+        # Believe "not Kyrgyz" unless the letters say otherwise.
+        translation = rest.strip() if has_kyrgyz_letters(question) else ""
+    else:
+        # The model ignored the format, which is what the previous prompt
+        # provoked. Treat the whole reply as a translation only when the
+        # question's own letters prove it is Kyrgyz.
+        translation = reply if has_kyrgyz_letters(question) else ""
+
+    usable = (
+        bool(translation)
+        # A reply that is the question handed back is not a translation.
+        and translation.casefold() != question.strip().casefold()
+        # Nor is one that still contains letters Russian does not have.
+        and not has_kyrgyz_letters(translation)
+    )
+    if usable:
+        return translation, True
+    if has_kyrgyz_letters(question):
+        # Searching the Kyrgyz original is the weak path this module exists to
+        # avoid, so record it rather than degrade silently.
+        log.warning("Kyrgyz question but no usable translation; reply was %r", reply[:120])
+    return question, False
 
 
 def answer_to_kyrgyz(bedrock, answer: str) -> str:

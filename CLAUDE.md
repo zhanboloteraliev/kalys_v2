@@ -338,6 +338,22 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   automatically, reached the chat, and a starter question streamed a correctly
   cited answer through the WebSocket behind Caddy. See the Step 18 entry in
   `LEARNING.md`.
+- Step 19 (fix the language check): done 2026-10-25. A Russian question on the
+  live site was answered in Kyrgyz, and reproducing it showed **every** Russian
+  question was. The Step 15 prompt asked the model to reply `SAME` for a
+  non-Kyrgyz question; it never did, because the same prompt told it to use
+  precise legal wording and it rewrote the Russian instead - and the code
+  treated any reply that was not the marker as a translation, even one
+  identical to the input. Now the model replies with `KYRGYZ`/`RUSSIAN`/`OTHER`
+  on the first line and the translation on the second, the Kyrgyz path needs
+  the verdict *and* a translation that is neither the question echoed back nor
+  still carrying Kyrgyz letters, and `ү ө ң` (absent from Russian) override a
+  wrong verdict. 0/6 wrong against the real model, from 3/6. Kyrgyz hit@10
+  0.967 -> 0.933 (one question of thirty), MRR unchanged at 0.756.
+  **The eval harness still does not exercise this path** - it feeds questions
+  straight to `hybrid_search`, never through `question_to_russian`, which is
+  why 125 labelled questions and 133 tests all passed while every Russian
+  question was mis-routed. Worth fixing. See the Step 19 entry in `LEARNING.md`.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

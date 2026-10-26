@@ -1288,3 +1288,77 @@ the point of a site meant for anyone to try.
   the failure path. Their "always passes" key omits the action field, so strict
   verification rejects it - which is correct. The success path needed a
   different test.
+
+## Step 19: the language check that answered Russian questions in Kyrgyz
+
+### What went wrong
+A real question on the live site - `милиция вымогает у меня деньги`, in Russian
+- came back answered in Kyrgyz. Reproducing it showed it was not an edge case:
+**every** Russian question was being treated as Kyrgyz.
+
+The Step 15 design asked the model to reply with the marker `SAME` when a
+question was not Kyrgyz. It never did. The same prompt also told it to use
+precise legal wording, which invited it to *rewrite* the Russian instead -
+`милиция` became `полиция`, `какие права есть у подозреваемого` became `какие
+права имеет подозреваемый`. The code then treated any reply that was not the
+marker as a translation, so Russian questions took the Kyrgyz path: searched in
+Russian (fine), answered in Russian (fine), then translated into Kyrgyz (wrong),
+at three Bedrock calls instead of one.
+
+One case made the design error plain: for `Что такое залог как мера
+пресечения?` the model replied with text *identical to the input*, and it was
+still treated as a translation, because the code only looked for the marker and
+never compared the reply with the question.
+
+### What we changed
+The model now states the language on the first line (`KYRGYZ`, `RUSSIAN` or
+`OTHER`) and puts the translation on the second, and the Kyrgyz path is taken
+only when three things hold: the verdict says Kyrgyz, a translation came back,
+and that translation is neither the question handed back nor still carrying
+Kyrgyz-only letters. Two safety nets sit around it: the letters `ү ө ң` do not
+exist in Russian, so finding one settles the question whatever the model says;
+and if the model ignores the format entirely, its reply is only trusted when
+those letters prove the question is Kyrgyz.
+
+Measured against the real model afterwards: 0 of 6 mixed-language questions
+wrong, where 3 of 6 had been wrong before. Kyrgyz retrieval hit@10 moved 0.967
+to 0.933 - one question out of thirty, which is noise at that size - and MRR
+was unchanged at 0.756.
+
+### What we learned
+- **Do not ask a model for a sentinel value it has no reason to produce.**
+  "Reply SAME if nothing is needed" asks it to do nothing when the rest of the
+  prompt is urging it to improve the text. A verdict it must choose between
+  three named options is a question it can actually answer.
+- **An instruction to be precise fights an instruction to leave things alone.**
+  The two rules were in the same prompt, and the helpful one won.
+- **Never infer a decision from "the reply was not X".** The reply being
+  different from the marker was treated as proof of a translation. A reply
+  identical to the input passed that test. The check must be positive - what
+  the reply *is* - not the absence of something.
+- **Prefer a deterministic signal where one exists.** Three Kyrgyz letters are
+  absent from Russian. That is a fact about the alphabets, not a judgement, and
+  it needs no model.
+- **Choose which way to fail.** Treating Russian as Kyrgyz answers a reader in a
+  language they may not read: plainly broken. Treating Kyrgyz as Russian only
+  makes its retrieval worse. The fallback now goes the second way, and says so
+  in the log.
+- **The eval set did not catch this.** It holds 30 Kyrgyz and 30 Russian
+  questions, but the harness feeds them to the *search* directly and never
+  through `question_to_russian`, so the routing was never exercised. A user
+  found it on the first day. Test the pipeline the user walks through, not just
+  the part that was interesting to build.
+
+### Interview questions
+- *A user reported a wrong-language answer. How did you find the cause?* By
+  reproducing it before changing anything, which showed it was not one question
+  but all Russian ones. The prompt asked for a marker the model never emitted,
+  and the code treated "not the marker" as proof of a translation.
+- *How do you detect language reliably?* Where the alphabets differ, in code -
+  Kyrgyz has three letters Russian does not. Where they do not, ask the model
+  for a verdict it has to choose, and verify the answer rather than inferring
+  it from what is missing.
+- *Your tests passed and it still broke. Why?* They covered the function with a
+  fake that returned the marker the prompt asked for, so they tested the design
+  rather than the model's behaviour, and the eval set never ran through the
+  routing at all.
