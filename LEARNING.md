@@ -1488,3 +1488,71 @@ until the evaluation set covered it there was no way to say whether it worked.
   delete-and-insert per language is a correctness property, not an accident,
   and weakening it to survive a network blip trades a real invariant for a
   retry that already fixes the problem.
+
+## Step 20c: deploying the Labour Code without SSH, and without downtime
+
+### What we built
+The Labour Code went live at https://kalys.eraliev.com. Nothing was installed
+and nothing was restarted: the deploy was a database restore, run from the
+laptop over an SSM port forward, while the site stayed up and answering.
+
+### Why
+Two constraints shaped it. Port 22 has been closed since Step 18, so there is
+no `scp` any more - the runbook's own instructions had gone stale. And the
+instance cannot download the law itself (the Ministry of Justice site blocks
+cloud IPs with a 403, Step 2), so the laptop stays the source of truth and the
+server is a replica that receives a dump.
+
+The answer was that a dump does not need to be *copied* anywhere. SSM forwards
+a local port to PostgreSQL on the instance, so `pg_restore` runs on the laptop
+and writes over the network:
+
+```bash
+aws ssm start-session --target i-0aa39205f5024aa85 \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters '{"portNumber":["5432"],"localPortNumber":["5433"]}'
+```
+
+### What we learned
+- **The plan in CLAUDE.md was wrong in a cheap direction.** It said to re-run
+  `python -m kalys.embed` on the box. But the dump contains `embeddings`, and
+  both sides embed with the same Titan model, so the vectors are portable: a
+  20-minute Bedrock run turned out to be dead work. Re-embedding on the box is
+  for when the *model* changes (Step 16), not when the *data* does.
+- **Restarting is a habit, not a requirement.** `web.py` and `answer.py` open
+  a fresh connection per question, so the running process holds no cached
+  query plan pointing at a table the restore dropped, and the next question
+  sees the new data. Worth checking rather than assuming: a long-lived
+  connection would have made the same restore fail in a confusing way
+  (`cached plan must not change result type`) and the fix would have been a
+  restart.
+- **A restore is wider than the data you meant to change.** `usage` is the
+  daily spending cap's memory, kept in PostgreSQL precisely so a restart
+  cannot reset it (Step 11) - and a full restore resets it anyway, from the
+  laptop's empty copy. Saving those four rows and re-inserting them with
+  `GREATEST` keeps the cap honest. A safety mechanism is only as durable as
+  the operations nobody thought to check it against.
+- **SELinux broke the obvious command.** `-v dump:/d` inside the container
+  gave `could not open input file: Permission denied`, because Fedora labels
+  bind mounts. Piping the dump in on stdin removed the problem instead of
+  solving it - the better trade when the mount buys nothing.
+- **Verify against the stored text, not against the answer's confidence.** The
+  live answer gave 28 days, 30 for under-18s and persons with disabilities,
+  and holidays not counted. All three were then read back out of
+  `translations` - the point of the check is that a fluent answer and a
+  correct one look identical.
+
+### Interview questions
+- *How do you move a 85 MB database to a server with no inbound ports open?*
+  You do not move a file at all. Session Manager forwards a local port to the
+  remote database, and the restore client runs locally - the dump never exists
+  on the server. It also means no key, no open port, and no IP allowlist.
+- *You restored over a live production database. How did you keep the outage
+  small?* By first establishing that no restart was needed - connections are
+  per-request - so the only exposure was the minutes in which tables were
+  being replaced, at a known traffic level of about a dozen questions a day.
+  The alternative, stopping the service, was offered and was the owner's call.
+- *What did the restore overwrite that you did not intend?* The `usage` table,
+  which is the spending cap. It is the clearest case of a blast radius being
+  wider than the change: the data I meant to ship was articles and
+  translations, but `pg_restore --clean` is not selective by intent.

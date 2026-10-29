@@ -372,10 +372,30 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   be (through the hand-made Russian translations in
   `eval/ky_query_translations.json`), is **0.97 / 0.828**, against 0.967 /
   0.825 measured the same way at Step 15: unchanged.
-  **Remaining: deploy only** - start the instance, git pull, `python -m
-  kalys.embed` on the box, restart `kalys`. A database dump is also needed
-  this time, unlike Step 16: `articles` and `translations` both changed, not
-  just `embeddings`.
+  **Deployed and verified live on 2026-10-28**, at
+  https://kalys.eraliev.com. Three things turned out differently from the
+  plan written here. The dump carried the `embeddings` table as well, so
+  re-embedding on the box was not needed at all - both sides use the same
+  Titan model, so the vectors are portable, which saved a 20-minute Bedrock
+  run. **No restart was needed either:** `web.py` and `answer.py` open a fresh
+  connection per question, so new data is served live, and every code change
+  in this step (`parse.py`, `load_db.py`, `embed.py`, the new act entry) is
+  build-time, not serving-time. And the dump had to be moved a new way, since
+  port 22 has been closed since Step 18 - see `docs/deploy.md` section 4b:
+  SSM forwards a local port to the instance's PostgreSQL and `pg_restore` runs
+  on the laptop. Verified with a real leave question: 28 calendar days, 30 for
+  under-18s and persons with disabilities, holidays not counted - each figure
+  checked against the stored article text, each cited with article and edition
+  date, the machine-translation disclaimer intact.
+  One trap found: a full restore replaces `usage`, which is the daily spending
+  cap's own memory, so the box's four rows were saved and put back with
+  `GREATEST`. A restore that wipes that table quietly grants a fresh day's
+  budget.
+  **The box's git checkout is still 4 commits behind.** `git pull` on the
+  instance is a remote-shell write, which the assistant is not permitted to
+  run, so it is the owner's one-line step:
+  `cd kalys_v2 && git pull`. Serving is unaffected (see above), but the box
+  should match git before the next code change is deployed.
   **The translated English exists in only two places**:
   `data/manual_translate/labour_code_en.txt` (git-ignored, like the other
   three acts' translations) and the local `translations` table. It is not in

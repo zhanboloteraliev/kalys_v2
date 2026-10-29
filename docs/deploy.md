@@ -171,6 +171,53 @@ Then copy it up (about 40 MB):
 scp -i <your-key.pem> data/deploy/kalys.dump ubuntu@<instance-ip>:~/kalys.dump
 ```
 
+This is the first-time path only. Port 22 is closed now (step 7e), so for
+later updates use section 4b instead.
+
+## 4b. Updating the database later, through SSM
+
+With no SSH there is no way to copy a file up - but there is no need to. SSM
+forwards a local port straight to PostgreSQL on the instance, and `pg_restore`
+runs on the laptop, writing over the network:
+
+```bash
+# terminal 1: local port 5433 -> the instance's 127.0.0.1:5432
+aws ssm start-session --target i-0aa39205f5024aa85 \
+    --document-name AWS-StartPortForwardingSession \
+    --parameters '{"portNumber":["5432"],"localPortNumber":["5433"]}'
+
+# terminal 2
+docker compose exec -T db pg_dump -U kalys -d kalys -Fc > data/deploy/kalys.dump
+docker run --rm -i --network host -e PGPASSWORD=kalys pgvector/pgvector:pg16 \
+    pg_restore -h 127.0.0.1 -p 5433 -U kalys -d kalys \
+    --clean --if-exists --no-owner --no-privileges < data/deploy/kalys.dump
+```
+
+Four things worth knowing:
+
+- **The dump is the whole database, including `embeddings`.** Both sides run
+  the same Titan model, so the vectors are portable and re-running
+  `python -m kalys.embed` on the box is unnecessary - it saves 20 minutes and
+  a Bedrock run. (It is still the right thing to run when the *model* changes,
+  as in Step 16.)
+- **`usage` is replaced too**, and that table is the daily spending cap's
+  memory. Save it first and put it back, or a restore silently hands out a
+  fresh day's budget:
+
+  ```bash
+  psql ... -At -F, -c "select day, questions from usage order by day" > usage.csv
+  # after the restore, re-insert with
+  # ON CONFLICT (day) DO UPDATE SET questions = GREATEST(usage.questions, EXCLUDED.questions)
+  ```
+- **No restart is needed for a data-only change.** `web.py` and `answer.py`
+  open a fresh connection per question, so there are no cached query plans
+  pointing at the tables the restore dropped, and the next question sees the
+  new data. Restart only when the *code* changed.
+- **Mount the dump with `-i` and a redirect, not `-v`.** On Fedora, SELinux
+  labels a bind-mounted file so the container cannot read it
+  (`could not open input file: Permission denied`); piping it in on stdin
+  avoids the whole question.
+
 ## 5. Run the setup script
 
 ```bash
