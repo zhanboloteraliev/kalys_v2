@@ -92,7 +92,7 @@ class BedrockEmbedder:
         self.sleep = sleep  # a parameter so tests can run without real waiting
 
     def _encode_one(self, text: str) -> list[float]:
-        from botocore.exceptions import ClientError
+        from botocore.exceptions import BotoCoreError, ClientError
 
         body = json.dumps(
             {"inputText": text, "dimensions": EMBEDDING_DIMENSIONS, "normalize": True}
@@ -104,6 +104,15 @@ class BedrockEmbedder:
             except ClientError as error:
                 code = error.response.get("Error", {}).get("Code")
                 if code not in RETRYABLE_ERROR_CODES or attempt == BEDROCK_MAX_RETRIES:
+                    raise
+                self.sleep(2 ** (attempt + 2))
+            except BotoCoreError:
+                # A connection or timeout error, not an answer from AWS. These
+                # are retried too: one blip used to end a whole embedding run
+                # of ~11,000 requests, and because a language is embedded
+                # entirely in memory before anything is saved, 20 minutes of
+                # work was lost with it.
+                if attempt == BEDROCK_MAX_RETRIES:
                     raise
                 self.sleep(2 ** (attempt + 2))
         raise RuntimeError("unreachable")

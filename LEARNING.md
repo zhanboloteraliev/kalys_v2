@@ -1416,3 +1416,75 @@ and most valuable rarely coincide; here they did.
 - *Why keep a language you no longer search?* As a check. Two independent
   renderings of the same law catch parse errors that neither would reveal
   alone.
+
+## Step 20b: translating the Labour Code, and two bugs that hid behind it
+
+### What we built
+All 266 Labour Code articles translated into English, imported, and embedded,
+so the act is finally searchable: `translations` 1,100 -> 1,366, `embeddings`
+8,884 -> 11,310. 50 Labour questions added to the evaluation set (25 English,
+25 Russian), taking it from 125 to 175.
+
+### Why
+A loaded act is not a published one. Search reads `translations` and
+`embeddings`, so until the English existed the Labour Code was invisible, and
+until the evaluation set covered it there was no way to say whether it worked.
+
+### What we learned
+- **Adding a quarter more vectors cost the existing acts nothing.** On the
+  original 95 English/Russian questions hit@10 stayed at 0.98 and MRR at 0.796
+  (0.979 / 0.792 before). The worry was real - 2,426 new vectors compete in
+  every search - but it did not happen. Measuring it was the only way to know.
+- **A new act can be good immediately.** The 50 Labour questions score hit@10
+  0.96 and MRR 0.787 with no tuning of any kind for this act. That suggests the
+  retrieval quality was never really about the acts, it was about the embedding
+  model (Step 14) and the query language (Step 15).
+- **`ON CONFLICT DO NOTHING` makes a loader lie by omission.** Re-running
+  `load_db` after the Step 20 parser fix *added* the new article 65-1 but left
+  article 65 holding the whole of 65-1 inside it, duplicated - and that stale
+  copy is what would have been translated. A table derived from cached source
+  files must converge on the same result when reloaded, so the insert now
+  updates on conflict. Nothing in 144 tests could have caught this: the parser
+  was right, and only the database was wrong.
+- **Reading the data found what the tests could not.** The duplicate turned up
+  because the export was being read line by line for translation. The counts
+  all looked right - 266 articles, exact cross-language match - because the
+  count *was* right. Only the text was wrong.
+- **One missing line cost two runs.** `embed.py` never called `load_dotenv()`,
+  so it used the account's stale default AWS profile rather than
+  `AWS_PROFILE=kalys`, and Bedrock answered `UnrecognizedClientException`. The
+  call has to go above the constants, because `AWS_REGION` is read at import
+  time - putting it lower looks right and does nothing.
+- **Retry the transport, not just the service.** The next run died after 20
+  minutes on one dropped connection out of ~11,000 requests, because only AWS
+  error codes were retried and a connection failure is not one. It cost the
+  whole run, because a language is embedded entirely in memory before anything
+  is saved. The fix was to retry `BotoCoreError` as well; the all-or-nothing
+  save was left alone on purpose, since deleting a language's old vectors and
+  inserting the new ones together is what keeps whole-article and per-part rows
+  from competing.
+- **A number can be worthless rather than bad.** The `ky` column in the report
+  reads 0.10, which looks like a collapse from 0.933. It is neither: Kyrgyz is
+  not a search language any more, and the harness feeds the question straight
+  to the search instead of through `question_to_russian`. Measured the only
+  honest way - through the hand-made Russian translations - Kyrgyz is 0.97 /
+  0.828 against 0.967 / 0.825 at Step 15, i.e. unchanged. An unexercised code
+  path produces a metric that moves for no reason.
+
+### Interview questions
+- *You added 27% more data to a retrieval index. What did you check?* Whether
+  the existing questions still retrieved as well, separately from whether the
+  new ones did - because a shared vector space means new documents compete with
+  old ones in every search. Same questions, same labels, before and after.
+- *Why is `ON CONFLICT DO UPDATE` right for a source-of-truth table?* Because
+  the table is derived, not authored. The authority is the cached source file,
+  so re-running the loader has to reproduce it exactly; `DO NOTHING` freezes
+  whatever was inserted first and silently survives every later fix.
+- *A metric dropped from 0.93 to 0.10. How do you tell a regression from a
+  broken measurement?* Check that the code path the metric claims to measure is
+  the one that actually ran. Here it was not: the harness never called the
+  translation step, so the figure described something nobody ships.
+- *Why not make the embedding job resumable?* Because the atomic
+  delete-and-insert per language is a correctness property, not an accident,
+  and weakening it to survive a network blip trades a real invariant for a
+  retry that already fixes the problem.

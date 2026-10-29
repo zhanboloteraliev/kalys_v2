@@ -2,7 +2,7 @@ import io
 import json
 
 import pytest
-from botocore.exceptions import ClientError
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from kalys.embed import (
     EMBEDDING_DIMENSIONS,
@@ -70,15 +70,18 @@ def test_article_chunks_keeps_articles_separate():
 class FakeBedrockClient:
     """Stands in for boto3's bedrock-runtime client."""
 
-    def __init__(self, errors_before_success=0, error_code="ThrottlingException"):
+    def __init__(self, errors_before_success=0, error_code="ThrottlingException", error=None):
         self.errors_before_success = errors_before_success
         self.error_code = error_code
+        self.error = error  # an exception instance, instead of a ClientError code
         self.calls = []
 
     def invoke_model(self, modelId, body):  # noqa: N803 - boto3 names it this way
         self.calls.append(json.loads(body))
         if self.errors_before_success > 0:
             self.errors_before_success -= 1
+            if self.error is not None:
+                raise self.error
             raise ClientError({"Error": {"Code": self.error_code}}, "InvokeModel")
         return {"body": io.BytesIO(json.dumps({"embedding": [0.1, 0.2, 0.3]}).encode())}
 
@@ -110,6 +113,24 @@ def test_bedrock_embedder_retries_a_throttling_error():
     waits = []
     assert _embedder(client, waits).encode(["a"]) == [[0.1, 0.2, 0.3]]
     assert waits == [4, 8]  # backoff doubles
+
+
+def test_bedrock_embedder_retries_a_connection_error():
+    # A real run died here: one dropped connection out of ~11,000 requests
+    # ended the whole embedding run, and nothing is saved until a language is
+    # finished, so 20 minutes of work went with it.
+    error = EndpointConnectionError(endpoint_url="https://bedrock-runtime.us-east-1.amazonaws.com/")
+    client = FakeBedrockClient(errors_before_success=2, error=error)
+    waits = []
+    assert _embedder(client, waits).encode(["a"]) == [[0.1, 0.2, 0.3]]
+    assert waits == [4, 8]
+
+
+def test_bedrock_embedder_gives_up_on_a_connection_error_that_keeps_happening():
+    error = EndpointConnectionError(endpoint_url="https://bedrock-runtime.us-east-1.amazonaws.com/")
+    client = FakeBedrockClient(errors_before_success=99, error=error)
+    with pytest.raises(EndpointConnectionError):
+        _embedder(client).encode(["a"])
 
 
 def test_bedrock_embedder_does_not_retry_a_bad_request():

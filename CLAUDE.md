@@ -356,16 +356,30 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   straight to `hybrid_search`, never through `question_to_russian`, which is
   why 125 labelled questions and 133 tests all passed while every Russian
   question was mis-routed. Worth fixing. See the Step 19 entry in `LEARNING.md`.
-- Step 20 (more acts, starting with the Labour Code): **in progress.** The act
-  is added to `src/kalys/acts.py`, ingested (7 editions x 2 languages, the
-  fewest of any code in force), parsed and loaded: **266 articles**, an exact
-  cross-language match. **English translation is not done yet** - 266 articles,
-  about 305,000 characters of Russian, median 939 and longest 15,822. Until it
-  is translated, imported and embedded, the Labour Code is in `articles` but
-  invisible to search, which only reads `translations` and `embeddings`.
-  Remaining: translate -> `python -m kalys.import_translations` ->
-  `python -m kalys.embed` -> add Labour questions to `eval/questions.jsonl` ->
-  re-measure -> deploy (git pull + embed on the box + restart).
+- Step 20 (more acts, starting with the Labour Code): **done locally, not
+  deployed.** The act is in `src/kalys/acts.py`, ingested (7 editions x 2
+  languages, the fewest of any code in force), parsed and loaded: **266
+  articles**, an exact cross-language match. All 266 are **translated into
+  English** (about 305,000 characters of Russian; the English is 350 KB),
+  imported, and embedded: `translations` 1,100 -> **1,366**, `embeddings`
+  8,884 -> **11,310** (1,213 Labour parts per language). 50 Labour questions
+  were added to `eval/questions.jsonl` (25 en, 25 ru), taking it to 175.
+  **Result: the new act did not cost the old ones anything.** On the original
+  95 en/ru questions hit@10 is **0.98**, MRR **0.796** (was 0.979 / 0.792
+  before the Labour Code). The 50 new Labour questions score hit@10 **0.96**,
+  MRR **0.787** - the new act retrieves about as well as the old ones, with no
+  prompt or retrieval tuning done for it. Kyrgyz, measured the only way it can
+  be (through the hand-made Russian translations in
+  `eval/ky_query_translations.json`), is **0.97 / 0.828**, against 0.967 /
+  0.825 measured the same way at Step 15: unchanged.
+  **Remaining: deploy only** - start the instance, git pull, `python -m
+  kalys.embed` on the box, restart `kalys`. A database dump is also needed
+  this time, unlike Step 16: `articles` and `translations` both changed, not
+  just `embeddings`.
+  **The translated English exists in only two places**:
+  `data/manual_translate/labour_code_en.txt` (git-ignored, like the other
+  three acts' translations) and the local `translations` table. It is not in
+  git and not backed up. Losing both means redoing the whole translation.
   Why the Labour Code first: adopted January 2025, so every guide online
   describes a repealed code, and it covers what people ask daily - being fired,
   wages, leave. Next: Code of Offences (`3-36`, 81 editions) and Family Code
@@ -382,6 +396,27 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   one above the Hugging Face count of 265, and we are probably right.
   The remaining 4 mismatches are Kyrgyz-side in the Procedure Code (162, 435,
   470, 474), a different cause, and they do not affect English.
+  **Two bugs this step exposed, both now fixed:**
+  `load_db` inserted articles with `ON CONFLICT DO NOTHING`, so re-running it
+  after the parser fix above *added* article 65-1 but left article 65 holding
+  the whole of 65-1 inside it, duplicated - and the stale copy is what would
+  have been translated. The loader now updates on conflict: `articles` is
+  derived from the cached source files, so a reload must converge on the same
+  result. Found by reading the exported Russian, not by any test.
+  `embed.py` never called `load_dotenv()`, so a local run used the account's
+  stale default AWS profile instead of `AWS_PROFILE=kalys` and Bedrock
+  answered `UnrecognizedClientException`; the call has to sit above the
+  constants, because `AWS_REGION` is read at import time. A second run then
+  died on a dropped connection, because only AWS *error codes* were retried,
+  not connection failures - and since a language is embedded entirely in
+  memory before anything is saved, 20 minutes of work went with it.
+  `BedrockEmbedder` now retries `BotoCoreError` too.
+  **Known stale script:** `eval/translation_experiment.py` still imports
+  `LocalEmbedder`, so it measures against the pre-Step-14 model and no longer
+  runs usefully against the current index. The Kyrgyz figure above was
+  measured separately. Worth fixing when Kyrgyz is next touched, together with
+  the Step 19 gap (the harness still never calls `question_to_russian`, so the
+  `ky` column in `eval_report.md` reads ~0.10 and measures nothing).
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
