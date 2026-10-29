@@ -1556,3 +1556,50 @@ aws ssm start-session --target i-0aa39205f5024aa85 \
   which is the spending cap. It is the clearest case of a blast radius being
   wider than the change: the data I meant to ship was articles and
   translations, but `pg_restore --clean` is not selective by intent.
+
+## Step 20d: a loading label that spoke the wrong language
+
+### What we built
+The "please wait" text shown while a Kyrgyz question is answered is no longer
+a Chainlit step. It is a placeholder inside the reply message, which the
+answer then replaces.
+
+### Why
+Reported as: the chat says "жооп даярдалууда" while generating, whatever
+language the question was. Reproducing it in all three languages showed the
+label only ever appears on the Kyrgyz path - but it also showed two real
+defects in that label, either of which explains the report.
+
+- **Chainlit wraps a step name in its own UI language.** `cl.Step(name="Жооп
+  даярдалууда")` renders as **"Using Жооп даярдалууда"**, and then **"Used
+  Жооп даярдалууда"**. Half English, half Kyrgyz, and neither half was chosen.
+- **A finished step never leaves the thread.** It stays visible under the
+  answer, so after one Kyrgyz question that Kyrgyz line sits in the scroll
+  view above every later answer, in any language. Which looks exactly like
+  "it says this no matter what language I asked in".
+
+### What we learned
+- **A framework primitive brings its own copy.** The bug was not in the string
+  we wrote, it was in the words Chainlit put around it. Anything rendered by a
+  framework in a multilingual app has to be checked in the UI, not in the
+  source - the source looked perfectly fine.
+- **"Transient" is a property of the widget, not of the moment.** A step reads
+  as progress while it runs and as history once it stops. Progress that is
+  only true for one message belongs in that message, where replacing it is
+  natural.
+- **Not reproducing a report is a result, not a dismissal.** Three languages,
+  fresh session and straight after a Kyrgyz question: the label never appeared
+  on a streamed answer. What it did do was linger - which is close enough to
+  the report to be what was seen, and was worth fixing either way. The
+  alternative cause (a Russian question misrouted onto the Kyrgyz path, the
+  Step 19 bug) is testable: that answer would come back in Kyrgyz too.
+
+### Interview questions
+- *A user reports something you cannot reproduce. What do you do?* Try to
+  reproduce it honestly, in the same order a user would - here, asking in
+  Kyrgyz first mattered. Then look for a defect near the report rather than
+  insisting on the exact claim: the lingering label was real, visible, and
+  explains what they described.
+- *Why not just translate the step name per language?* Because the wrapper
+  word around it ("Using") is Chainlit's, not ours, so a translated name still
+  produces a mixed sentence. Removing the wrapper removes the class of bug.

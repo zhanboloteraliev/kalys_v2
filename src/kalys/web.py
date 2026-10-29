@@ -35,6 +35,11 @@ from kalys.limits import (
     session_limit_reached,
 )
 
+# Shown while a Kyrgyz question is being answered, because that path cannot
+# stream (see on_message). Kyrgyz, because it is only ever shown for a Kyrgyz
+# question - English and Russian answers stream and need no placeholder.
+KYRGYZ_WAIT_MESSAGE = "Жооп даярдалууда..."
+
 SCHEMA_FILE = Path("db/schema.sql")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhost:5432/kalys")
 
@@ -103,12 +108,21 @@ async def on_message(message: cl.Message) -> None:
     if was_kyrgyz:
         # The answer cannot be streamed here: it has to be finished in Russian
         # before it can be translated, and streaming Russian only to replace it
-        # with Kyrgyz would be worse than a short wait.
-        reply = cl.Message(content="")
+        # with Kyrgyz would be worse than a short wait. So the wait is filled
+        # with a placeholder that the answer then replaces.
+        #
+        # This used to be a `cl.Step` named "Жооп даярдалууда". Two things were
+        # wrong with that. Chainlit wraps a step name in its own UI language,
+        # so the label read "Using Жооп даярдалууда" - half English, half
+        # Kyrgyz. And a finished step stays in the thread for good, as "Used
+        # Жооп даярдалууда", so it sat under later answers in every language
+        # and looked as though Kyrgyz was being used for all of them. A
+        # placeholder in the message itself is in the question's own language
+        # and disappears when the answer arrives.
+        reply = cl.Message(content=KYRGYZ_WAIT_MESSAGE)
         await reply.send()
-        async with cl.Step(name="Жооп даярдалууда", type="run"):
-            russian = await asyncio.to_thread(bedrock.ask, prompt)
-            reply.content = await asyncio.to_thread(answer_to_kyrgyz, bedrock, russian)
+        russian = await asyncio.to_thread(bedrock.ask, prompt)
+        reply.content = await asyncio.to_thread(answer_to_kyrgyz, bedrock, russian)
         await reply.update()
         return
 

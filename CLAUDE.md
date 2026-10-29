@@ -437,6 +437,26 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   measured separately. Worth fixing when Kyrgyz is next touched, together with
   the Step 19 gap (the harness still never calls `question_to_russian`, so the
   `ky` column in `eval_report.md` reads ~0.10 and measures nothing).
+- Step 20d (the "please wait" label in the chat): fixed locally 2026-10-28,
+  **not deployed** (a code change, so it needs `git pull` *and*
+  `sudo systemctl restart kalys` on the box). A Kyrgyz question cannot be
+  streamed, so Step 15 filled the wait with a `cl.Step` named
+  "Жооп даярдалууда". Two things were wrong with that. Chainlit wraps a step
+  name in its own UI language, so it read **"Using Жооп даярдалууда"** - half
+  English, half Kyrgyz. And a finished step never leaves the thread: it stays
+  as "Used Жооп даярдалууда", sitting under later answers in every language,
+  which is why it looks like the Kyrgyz label appears whatever the question's
+  language. It is now a placeholder in the message itself
+  (`KYRGYZ_WAIT_MESSAGE`), which the answer replaces and which is only ever
+  shown for a Kyrgyz question.
+  **What was reported and not reproduced:** the label appearing for English or
+  Russian questions. Tested in all three languages locally, on a fresh session
+  and immediately after a Kyrgyz question: the label only ever appeared on the
+  Kyrgyz path. If it is really seen on a streamed answer, the cause is
+  something else and the lingering "Used" line is the most likely thing being
+  seen. Note that a Russian question misrouted as Kyrgyz (the Step 19 bug)
+  would also show it - but that answer would come back in Kyrgyz too.
+
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
