@@ -23,8 +23,10 @@
 - The original Kyrgyz and Russian texts are the **source of truth**. Never change them.
 - English is a machine translation, made once, stored, and reused.
 - English text must always be labeled: **"Machine translation. Not an official text."**
-- Scope for now: 3 acts only: Constitution (2021), Criminal Code (2021),
-  Criminal Procedure Code (No. 129, 28 Oct 2021). All editions, both languages.
+- Scope: 4 acts. Constitution (2021), Criminal Code (2021), Criminal Procedure
+  Code (No. 129, 28 Oct 2021) and, since 2026-10-26, the **Labour Code**
+  (No. 23, 23 Jan 2025, document code `3-45`). All editions, both languages.
+  More codes are planned - see Step 20.
 
 ## Rules for calling cbd.minjust.gov.kg
 - Max **1 request per second**.
@@ -354,6 +356,32 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   straight to `hybrid_search`, never through `question_to_russian`, which is
   why 125 labelled questions and 133 tests all passed while every Russian
   question was mis-routed. Worth fixing. See the Step 19 entry in `LEARNING.md`.
+- Step 20 (more acts, starting with the Labour Code): **in progress.** The act
+  is added to `src/kalys/acts.py`, ingested (7 editions x 2 languages, the
+  fewest of any code in force), parsed and loaded: **266 articles**, an exact
+  cross-language match. **English translation is not done yet** - 266 articles,
+  about 305,000 characters of Russian, median 939 and longest 15,822. Until it
+  is translated, imported and embedded, the Labour Code is in `articles` but
+  invisible to search, which only reads `translations` and `embeddings`.
+  Remaining: translate -> `python -m kalys.import_translations` ->
+  `python -m kalys.embed` -> add Labour questions to `eval/questions.jsonl` ->
+  re-measure -> deploy (git pull + embed on the box + restart).
+  Why the Labour Code first: adopted January 2025, so every guide online
+  describes a repealed code, and it covers what people ask daily - being fired,
+  wages, leave. Next: Code of Offences (`3-36`, 81 editions) and Family Code
+  (`3-21`, 26 editions). The full list of 21 codes in force comes from
+  `POST /api/v1/GetDocuments` with `{"refTypeId": "0030", "refStatusId": "10"}`.
+  **Parser fix made here:** a few added articles are published without the word
+  `Статья` and with a space in the number (`65 -1. День голосования на выборах`
+  inside article 65), so two articles were folded into one.
+  `split_continuations` in `parse.py` now treats such a line as a heading, but
+  only when its leading number repeats the article it sits inside - parts are
+  numbered `1.`, `2.` and never carry the article's own number, which is what
+  makes it safe. It recovered Labour 65-1 (ru) and Criminal Code 228-1 (kg);
+  both acts now match exactly across languages. This also puts the Labour Code
+  one above the Hugging Face count of 265, and we are probably right.
+  The remaining 4 mismatches are Kyrgyz-side in the Procedure Code (162, 435,
+  470, 474), a different cause, and they do not affect English.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

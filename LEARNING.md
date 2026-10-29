@@ -1362,3 +1362,57 @@ was unchanged at 0.756.
   fake that returned the marker the prompt asked for, so they tested the design
   rather than the model's behaviour, and the eval set never ran through the
   routing at all.
+
+## Step 20: adding the Labour Code, and the bug it exposed
+
+### What we built
+The Labour Code (document code `3-45`) added to `src/kalys/acts.py`, downloaded,
+parsed and loaded: 7 editions, 266 articles. English translation still to come.
+
+### Why this act first
+It was adopted in January 2025, so every labour-law guide online describes a
+code that no longer exists - a sharper version of the argument that made this
+project worth building. It is also what people ask about: being fired, unpaid
+wages, leave, overtime. And it has the fewest editions of any code in force, 7
+against the Code of Offences' 81, so it was the cheapest to ingest. Cheapest
+and most valuable rarely coincide; here they did.
+
+### What we learned
+- **Adding data found a bug in code that was already shipped.** A few added
+  articles are published without the word `Статья` and with a space inside the
+  number: `65 -1. День голосования на выборах` sits inside the body of article
+  65. The parser requires `Статья N.`, so it folded two articles into one and
+  the second disappeared - in this case a paid day off for voting.
+- **The second language worked as a checksum.** The Kyrgyz text publishes those
+  headings properly, so the article existed in Kyrgyz and not in Russian, and
+  the count mismatch is the only reason anyone noticed. Kyrgyz is no longer a
+  search index, but it is still worth keeping for exactly this: an independent
+  second rendering of the same law to compare against.
+- **Make a loose rule safe with a condition, not with care.** Accepting any
+  line that looks like `N-M.` as a heading would be reckless, because article
+  parts are numbered too. Requiring the leading number to repeat the article it
+  sits inside makes it airtight: a part is numbered `1.`, `2.` and never
+  carries its article's number.
+- **One fix, two acts.** The pattern is language-neutral, so it also recovered
+  Criminal Code article 228-1 on the Kyrgyz side, which had been missing since
+  Step 4 without anyone noticing. Both acts now match exactly across languages.
+- **Being above the reference count can be correct.** The Hugging Face dataset
+  says 265 articles for this code and we now say 266. Both the Kyrgyz heading
+  and the Russian body text show 65-1 as its own article, so the dataset
+  probably has the same merge. A benchmark is evidence, not an authority.
+- **Loading is not publishing.** The act is in `articles` and still invisible
+  to search, because search reads `translations` and `embeddings`. A new act is
+  only live after translation, import and embedding.
+
+### Interview questions
+- *How do you add a new law to the system?* Add it to the act list, download
+  every edition in both languages, parse into articles, load, translate the
+  current edition into English, import, embed, then extend the evaluation set
+  and re-measure before deploying.
+- *You found a parser bug years into the project. How?* By adding data. The new
+  act had one article in Kyrgyz that was missing in Russian, and chasing that
+  single-number discrepancy found a heading format the parser never handled -
+  which turned out to affect an existing act too.
+- *Why keep a language you no longer search?* As a check. Two independent
+  renderings of the same law catch parse errors that neither would reveal
+  alone.
