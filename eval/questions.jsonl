@@ -123,3 +123,53 @@
 {"id": "q123", "question": "Конституция күнөөсүздүк презумпциясы жөнүндө эмне дейт?", "lang": "ky", "kind": "citizen", "expect": [{"act": "constitution", "article": "57"}]}
 {"id": "q124", "question": "Кыргызстандын мамлекеттик тили кайсы?", "lang": "ky", "kind": "citizen", "expect": [{"act": "constitution", "article": "13"}]}
 {"id": "q125", "question": "Конституция турак жайдын кол тийбестиги жөнүндө эмне дейт?", "lang": "ky", "kind": "citizen", "expect": [{"act": "constitution", "article": "30"}]}
+{"id": "q126", "question": "How many days of annual paid leave am I entitled to?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "68"}]}
+{"id": "q127", "question": "How much notice must I give my employer if I want to quit?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "43"}]}
+{"id": "q128", "question": "How long can a probationary period last when I am hired?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "24"}]}
+{"id": "q129", "question": "My employer has not paid my wages on time. What do I get for the delay?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "94"}]}
+{"id": "q130", "question": "Can I be fired while I am pregnant?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "151"}]}
+{"id": "q131", "question": "How many hours is a normal working week?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "51"}]}
+{"id": "q132", "question": "How is overtime work paid?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "108"}]}
+{"id": "q133", "question": "What are the grounds on which an employer can terminate my employment contract?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "44"}]}
+{"id": "q134", "question": "How many hours of absence from work counts as absenteeism?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "44"}]}
+{"id": "q135", "question": "What severance pay is due when a position is cut?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "47"}]}
+{"id": "q136", "question": "What counts as a mass dismissal of employees?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "39"}]}
+{"id": "q137", "question": "What is the maximum period for a fixed-term employment contract?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "18"}]}
+{"id": "q138", "question": "What information must an employment contract contain?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "17"}]}
+{"id": "q139", "question": "What disciplinary penalties can an employer apply, and how long do they stay in force?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "88"}, {"act": "labour_code", "article": "89"}]}
+{"id": "q140", "question": "What is the limit on deductions from an employee's wages?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "96"}]}
+{"id": "q141", "question": "At what age can a person be hired as an employee?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "14"}]}
+{"id": "q142", "question": "How long is maternity leave?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "148"}]}
+{"id": "q143", "question": "What hours count as night work, and how is it paid?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "56"}, {"act": "labour_code", "article": "103"}]}
+{"id": "q144", "question": "Which days are non-working holidays?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "66"}]}
+{"id": "q145", "question": "How long do I have to go to court after I am dismissed?", "lang": "en", "kind": "citizen", "expect": [{"act": "labour_code", "article": "243"}]}
+{"id": "q146", "question": "When can an employer suspend an employee from work?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "37"}]}
+{"id": "q147", "question": "What is the quota of workplaces for persons with disabilities?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "155"}]}
+{"id": "q148", "question": "How much is an employee liable for damage caused to the employer?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "130"}]}
+{"id": "q149", "question": "What must an employer do to ensure occupational safety and health?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "204"}]}
+{"id": "q150", "question": "When is a strike unlawful?", "lang": "en", "kind": "professional", "expect": [{"act": "labour_code", "article": "259"}]}
+{"id": "q151", "question": "Сколько дней ежегодного оплачиваемого отпуска мне положено?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "68"}]}
+{"id": "q152", "question": "За сколько я должен предупредить работодателя об увольнении по собственному желанию?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "43"}]}
+{"id": "q153", "question": "Какой срок испытания при приеме на работу?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "24"}]}
+{"id": "q154", "question": "Работодатель задерживает зарплату. Что он должен выплатить за просрочку?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "94"}]}
+{"id": "q155", "question": "Могут ли уволить беременную женщину?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "151"}]}
+{"id": "q156", "question": "Сколько часов составляет нормальная продолжительность рабочего времени в неделю?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "51"}]}
+{"id": "q157", "question": "Как оплачивается сверхурочная работа?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "108"}]}
+{"id": "q158", "question": "По каким основаниям работодатель может расторгнуть трудовой договор?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "44"}]}
+{"id": "q159", "question": "Какое выходное пособие выплачивается при сокращении штата?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "47"}]}
+{"id": "q160", "question": "Что считается массовым увольнением работников?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "39"}]}
+{"id": "q161", "question": "На какой максимальный срок заключается срочный трудовой договор?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "18"}]}
+{"id": "q162", "question": "Какие сведения должен содержать трудовой договор?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "17"}]}
+{"id": "q163", "question": "Какие дисциплинарные взыскания может применить работодатель?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "88"}]}
+{"id": "q164", "question": "Каков предельный размер удержаний из заработной платы?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "96"}]}
+{"id": "q165", "question": "С какого возраста можно принимать на работу?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "14"}]}
+{"id": "q166", "question": "Какова продолжительность отпуска по беременности и родам?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "148"}]}
+{"id": "q167", "question": "Какое время считается ночным и как оплачивается работа в ночное время?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "56"}, {"act": "labour_code", "article": "103"}]}
+{"id": "q168", "question": "Какие дни являются нерабочими праздничными днями?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "66"}]}
+{"id": "q169", "question": "В какой срок можно обратиться в суд по спору об увольнении?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "243"}]}
+{"id": "q170", "question": "В каких случаях работодатель обязан отстранить работника от работы?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "37"}]}
+{"id": "q171", "question": "Какая квота рабочих мест установлена для лиц с ограниченными возможностями здоровья?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "155"}]}
+{"id": "q172", "question": "В каком размере работник несет материальную ответственность за ущерб?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "130"}]}
+{"id": "q173", "question": "Можно ли работать в выходной день и как это компенсируется?", "lang": "ru", "kind": "citizen", "expect": [{"act": "labour_code", "article": "67"}]}
+{"id": "q174", "question": "Какие забастовки являются незаконными?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "259"}]}
+{"id": "q175", "question": "Что такое дистанционная работа и как она оформляется?", "lang": "ru", "kind": "professional", "expect": [{"act": "labour_code", "article": "184"}]}

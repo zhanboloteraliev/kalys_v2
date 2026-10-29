@@ -57,7 +57,14 @@ def main() -> None:
                 conn.execute(
                     "INSERT INTO articles (edition_id, lang, number, title, text) "
                     "VALUES (%s, %s, %s, %s, %s) "
-                    "ON CONFLICT (edition_id, lang, number) DO NOTHING",
+                    # DO UPDATE, not DO NOTHING: the articles table is derived
+                    # from the cached source files, so re-running the loader
+                    # after a parser fix must converge on the same result. With
+                    # DO NOTHING, a fix that split one article into two inserted
+                    # the new article but left the old one with its stale text,
+                    # so the same text was stored twice (Labour Code 65/65-1).
+                    "ON CONFLICT (edition_id, lang, number) DO UPDATE "
+                    "SET title = EXCLUDED.title, text = EXCLUDED.text",
                     (row["edition_id"], row["lang"], article.number, article.title, article.text),
                 )
                 articles_loaded += 1

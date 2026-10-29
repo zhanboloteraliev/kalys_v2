@@ -25,8 +25,16 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import psycopg
+from dotenv import load_dotenv
 
 from kalys.chunk import chunk_text, split_into_parts
+
+# Without this, a local run picks up the account's stale default AWS profile
+# instead of AWS_PROFILE=kalys from .env, and Bedrock answers
+# UnrecognizedClientException. On the server .env has no AWS_PROFILE on
+# purpose (the instance role provides the credentials), and load_dotenv never
+# overwrites a real environment variable, so this is safe there.
+load_dotenv()
 
 LOCAL_EMBEDDING_MODEL = "paraphrase-multilingual-mpnet-base-v2"
 BEDROCK_EMBEDDING_MODEL = "amazon.titan-embed-text-v2:0"
