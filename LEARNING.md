@@ -1662,3 +1662,60 @@ looking at what users get.
 - *You report 0.97 overall now instead of 0.82. Is that an improvement?* No,
   and saying so would be dishonest. Nothing retrieves better than it did
   yesterday; a sixth of the questions simply started being measured.
+
+## Step 20f: search in one language, answer in another
+
+### What we built
+`route_question` now returns two questions for a Kyrgyz question: an English
+one to search with, and a Russian one to answer from. Before, both jobs used
+the Russian translation.
+
+### Why
+Step 20e measured the two options and English won: on the 30 Kyrgyz eval
+questions, a hand-made English translation retrieves at hit@10 1.00 / MRR
+0.873 against 0.97 / 0.828 for Russian. That makes sense once the index is
+looked at rather than the language: every article in it has an English
+translation, so an English query is compared with like, while a Russian query
+is matched against English text by the embedding model alone.
+
+But the *answer* still has to come from Russian, because it is translated into
+Kyrgyz afterwards and Step 9 found Kyrgyz was the language the model followed
+instructions in worst. So the two languages do different halves of the job.
+
+### What we learned
+- **The query language and the answer language are separate decisions.** They
+  had been the same variable for no better reason than that one function
+  returned one string. Splitting them was most of the work; the measurement
+  had already been done.
+- **Result: Kyrgyz MRR 0.753 -> 0.792, hit@10 unchanged at 0.93.** The correct
+  article is ranked higher, but no article that was missing became found. That
+  distinction matters: MRR moves when ranking improves, hit@10 only moves when
+  retrieval reaches something new.
+- **The ceiling told us where the limit moved to.** Hand-made English reaches
+  0.873 and the real model's English reaches 0.792, so after this change the
+  limit is translation quality, not the choice of language. Without the
+  ceiling measurement we would not know whether to tune the prompt or give up.
+- **Two small calls beat one clever one.** The alternative was a single reply
+  carrying the verdict, the Russian and the English on three lines. That is
+  exactly the shape that failed in Step 19, where a model that ignored the
+  format silently broke the routing for every Russian question. Two calls,
+  each with one job and its own guard, can each fail without taking the other
+  down - and the English one failing just means searching in Russian, which is
+  what shipped yesterday.
+- **A guard that uses the alphabet.** An English translation is written in
+  Latin script, so any Cyrillic in the reply means the model did something
+  other than translate. That is a cheap, exact check - the same trick as
+  `ү ө ң` proving a question is Kyrgyz.
+
+### Interview questions
+- *You improved MRR but not hit@10. Is that worth shipping?* Yes, but say
+  which it is. The model sees ten articles either way; ranking the right one
+  higher makes it likelier to be used and cited, while hit@10 would only move
+  if retrieval found something it had been missing.
+- *Why not translate the Kyrgyz question once and use it for everything?*
+  Because the two uses want different languages. Searching compares the query
+  with English article text; answering has to produce Russian so the final
+  translation into Kyrgyz is a short hop. One string cannot be both.
+- *How do you know the gain is from the language and not from luck?* English
+  and Russian questions were measured in the same run and did not move at all,
+  because nothing in their path changed. Only the Kyrgyz rows moved.

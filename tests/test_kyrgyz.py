@@ -7,6 +7,7 @@ Kyrgyz one.
 """
 
 from kalys.kyrgyz import (
+    TO_ENGLISH_PROMPT,
     TO_KYRGYZ_PROMPT,
     TO_RUSSIAN_PROMPT,
     VERDICT_KYRGYZ,
@@ -15,7 +16,9 @@ from kalys.kyrgyz import (
     answer_to_kyrgyz,
     has_cyrillic,
     has_kyrgyz_letters,
+    question_to_english,
     question_to_russian,
+    route_question,
 )
 
 
@@ -130,3 +133,84 @@ def test_the_kyrgyz_prompt_protects_the_disclaimer():
 def test_the_kyrgyz_prompt_protects_numbers_and_citations():
     assert "Do not recalculate" in TO_KYRGYZ_PROMPT
     assert "Article 97" in TO_KYRGYZ_PROMPT
+
+
+# --- Step 20f: search in English, answer from Russian -------------------------
+
+
+class FakeBedrockByPrompt:
+    """Replies according to which system prompt it was given.
+
+    `route_question` makes two different calls, so a fake that answers both the
+    same way cannot tell them apart.
+    """
+
+    def __init__(self, russian: str = "", english: str = ""):
+        self.russian = russian
+        self.english = english
+        self.systems: list[str] = []
+
+    def ask(self, prompt: str, system: str = "") -> str:
+        self.systems.append(system)
+        if system == TO_ENGLISH_PROMPT:
+            return self.english
+        return self.russian
+
+
+def test_english_translation_is_rejected_when_it_is_not_english():
+    # Latin script is what an English translation looks like. Anything with
+    # Cyrillic in it means the model did something else.
+    bedrock = FakeBedrockByPrompt(english="Какое наказание за кражу?")
+    assert question_to_english(bedrock, "Уурулук үчүн кандай жаза каралган?") == ""
+
+
+def test_english_translation_is_returned_when_it_is_english():
+    bedrock = FakeBedrockByPrompt(english="What is the punishment for theft?")
+    question = "Уурулук үчүн кандай жаза каралган?"
+    assert question_to_english(bedrock, question) == "What is the punishment for theft?"
+    assert bedrock.systems == [TO_ENGLISH_PROMPT]
+
+
+def test_a_kyrgyz_question_is_searched_in_english_and_answered_from_russian():
+    bedrock = FakeBedrockByPrompt(
+        russian=f"{VERDICT_KYRGYZ}\nКакое наказание предусмотрено за кражу?",
+        english="What is the punishment for theft?",
+    )
+
+    searched, answered, was_kyrgyz = route_question(bedrock, "Уурулук үчүн кандай жаза каралган?")
+
+    assert searched == "What is the punishment for theft?"
+    assert answered == "Какое наказание предусмотрено за кражу?"
+    assert was_kyrgyz is True
+
+
+def test_the_search_falls_back_to_russian_when_english_fails():
+    # What shipped before Step 20f. A failed English translation must cost
+    # retrieval quality, never correctness.
+    bedrock = FakeBedrockByPrompt(
+        russian=f"{VERDICT_KYRGYZ}\nКакое наказание предусмотрено за кражу?",
+        english="",
+    )
+
+    searched, answered, was_kyrgyz = route_question(bedrock, "Уурулук үчүн кандай жаза каралган?")
+
+    assert searched == "Какое наказание предусмотрено за кражу?"
+    assert answered == searched
+    assert was_kyrgyz is True
+
+
+def test_an_english_question_is_routed_without_any_call():
+    bedrock = FakeBedrockByPrompt()
+    question = "What rights does a suspect have?"
+    assert route_question(bedrock, question) == (question, question, False)
+    assert bedrock.systems == []
+
+
+def test_a_russian_question_is_never_translated_into_english():
+    # The English call is for Kyrgyz only: a Russian question must cost exactly
+    # one routing call, as it did before.
+    bedrock = FakeBedrockByPrompt(russian=VERDICT_RUSSIAN)
+    question = "Какие права есть у подозреваемого?"
+
+    assert route_question(bedrock, question) == (question, question, False)
+    assert bedrock.systems == [TO_RUSSIAN_PROMPT]

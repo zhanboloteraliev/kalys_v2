@@ -497,6 +497,40 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   It is kept because it answers a different question from the harness - the
   ceiling, not the real result.
 
+- Step 20f (a Kyrgyz question is searched in English): done 2026-10-29,
+  **not deployed** (code change: needs `git pull` and
+  `sudo systemctl restart kalys` on the box). Step 20e measured that an
+  English translation of a Kyrgyz question retrieves better than a Russian
+  one, so `kalys.kyrgyz.route_question` now returns **two** questions: the
+  English one to search with and the Russian one to answer from. The search
+  language and the answer language are no longer the same thing, because they
+  are good at different halves of the job - the index holds an English
+  translation of every article, while Russian is what the answer is written in
+  before being translated to Kyrgyz (Step 9, Step 15).
+  **Result: Kyrgyz MRR 0.753 -> 0.792.** hit@10 stays 0.93 and English
+  (0.97 / 0.770) and Russian (0.98 / 0.829) are untouched, as they must be -
+  nothing changed for them. So the right article is ranked higher, but no new
+  articles were found. The gain is about half of what the ceiling promised:
+  hand-made English translations reach 1.00 / 0.873, the real model's English
+  reaches 0.93 / 0.792, so the translation quality is now the limit, not the
+  choice of language.
+  **Cost: one extra small call per Kyrgyz question** (4 instead of 3). English
+  and Russian questions are unaffected and still cost what they did.
+  Built as two one-job calls (`question_to_russian`, then
+  `question_to_english`) rather than one reply carrying both translations: a
+  multi-line protocol is exactly what broke in Step 19. If the English
+  translation fails or comes back with Cyrillic in it, the search falls back to
+  Russian, which is what shipped before - a bad translation costs retrieval
+  quality, never correctness.
+- A demo GIF pipeline lives in `scripts/make_demo_gif.sh`: six real
+  screenshots in, one smooth GIF (and an MP4) out. The old `assets/demo.gif`
+  was 5 frames at 0.34 fps, which is a slideshow. **The rebuild has not been
+  run to completion yet** - the first attempt was killed for system memory
+  pressure, and the script has since been made much lighter (upscale 2x
+  instead of 4x, and scenes that do not zoom skip the upscale). Frames are
+  captured and ready. The four things that make a zoom smooth are written at
+  the top of the script.
+
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

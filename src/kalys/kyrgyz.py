@@ -72,6 +72,17 @@ When translating from Kyrgyz:
   Translate the legal sense the question is asking about.
 - Keep every number, article number, age and date exactly as it appears."""
 
+TO_ENGLISH_PROMPT = """You translate a question about Kyrgyz law from Kyrgyz into English.
+
+- Translate it as a question. Do not answer it, do not turn it into a
+  statement, and do not add any fact the question does not contain.
+- Use the term the law itself uses, not a near synonym: "detention" and
+  "remand in custody" are different articles, and so are "theft" and "robbery".
+- Some Kyrgyz legal terms resemble ordinary words with another meaning.
+  Translate the legal sense the question is asking about.
+- Keep every number, article number, age and date exactly as it appears.
+- Reply with the English question alone, with nothing before or after it."""
+
 TO_KYRGYZ_PROMPT = """You translate a legal answer from Russian into Kyrgyz.
 
 - Translate the whole answer, keeping its paragraphs, lists and bold text.
@@ -151,6 +162,50 @@ def question_to_russian(bedrock, question: str) -> tuple[str, bool]:
         # avoid, so record it rather than degrade silently.
         log.warning("Kyrgyz question but no usable translation; reply was %r", reply[:120])
     return question, False
+
+
+def question_to_english(bedrock, question: str) -> str:
+    """Translate a Kyrgyz question into English, or return '' if unusable.
+
+    Only called for a question already judged to be Kyrgyz, so there is no
+    verdict line to parse here - one job, one reply. An English translation is
+    written in Latin script, so any Cyrillic left in the reply means the model
+    did something other than translate, and the caller falls back to Russian.
+    """
+    reply = bedrock.ask(question, system=TO_ENGLISH_PROMPT).strip()
+    if not reply or has_cyrillic(reply):
+        log.warning("No usable English translation; reply was %r", reply[:120])
+        return ""
+    return reply
+
+
+def route_question(bedrock, question: str) -> tuple[str, str, bool]:
+    """Return (question to search with, question to answer from, was Kyrgyz).
+
+    The two are the same question in every language but Kyrgyz. For Kyrgyz they
+    differ on purpose, because the best language to *search* in is not the best
+    language to *answer* from:
+
+    - Search in English. Measured on the 30 Kyrgyz eval questions, searching
+      with an English translation scores hit@10 1.00 and MRR 0.873, against
+      0.97 / 0.828 for Russian (Step 20e). The index holds an English
+      translation of every article, so an English query compares like with
+      like, while a Russian query is matched against English text by the
+      embedding model alone.
+    - Answer from Russian. The answer is written in Russian and then translated
+      into Kyrgyz, because Russian and Kyrgyz share legal vocabulary and Step 9
+      found Kyrgyz was the language the model followed instructions in worst.
+
+    Two small calls rather than one reply carrying both translations: a
+    multi-line protocol is what broke in Step 19, and each of these can fail on
+    its own without taking the other down. If the English one fails, the search
+    falls back to Russian, which is what shipped before Step 20f.
+    """
+    russian, was_kyrgyz = question_to_russian(bedrock, question)
+    if not was_kyrgyz:
+        return russian, russian, False
+    english = question_to_english(bedrock, question)
+    return english or russian, russian, True
 
 
 def answer_to_kyrgyz(bedrock, answer: str) -> str:

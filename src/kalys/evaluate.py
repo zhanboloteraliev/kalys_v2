@@ -36,7 +36,7 @@ import psycopg
 
 from kalys.answer import BedrockClient
 from kalys.embed import check_embedder_matches, embedder_from_env
-from kalys.kyrgyz import question_to_russian
+from kalys.kyrgyz import route_question
 from kalys.search import hybrid_search
 
 QUESTIONS_FILE = Path("eval/questions.jsonl")
@@ -248,10 +248,20 @@ def report(records: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def _search_question(bedrock, question: str) -> tuple[str, bool]:
+    """The chat's routing, reduced to what retrieval depends on.
+
+    `route_question` returns a third value, the question the *answer* is
+    written from, which changes nothing about what the search finds.
+    """
+    searched, _, was_kyrgyz = route_question(bedrock, question)
+    return searched, was_kyrgyz
+
+
 def main() -> None:
     questions = load_questions()
     embedder = embedder_from_env()
-    route = partial(question_to_russian, BedrockClient()) if ROUTE_QUESTIONS else None
+    route = partial(_search_question, BedrockClient()) if ROUTE_QUESTIONS else None
     if route is None:
         print("Routing off (KALYS_EVAL_ROUTE=0): Kyrgyz questions measure nothing.")
     with psycopg.connect(DATABASE_URL) as conn:

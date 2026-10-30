@@ -34,7 +34,7 @@ from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from kalys.embed import check_embedder_matches, embedder_from_env
-from kalys.kyrgyz import answer_to_kyrgyz, question_to_russian
+from kalys.kyrgyz import answer_to_kyrgyz, route_question
 from kalys.search import hybrid_search
 
 load_dotenv()
@@ -227,15 +227,18 @@ def gather_contexts(conn, embedder, question: str, limit: int = TOP_N) -> list[A
 def answer(conn, embedder, bedrock, question: str, limit: int = TOP_N) -> str:
     """Answer one question, in the language it was asked in.
 
-    A Kyrgyz question is searched and answered in Russian and the answer is
-    translated back, because Kyrgyz search did not work (see `kalys.kyrgyz`).
+    A Kyrgyz question is searched in English and answered in Russian, and the
+    answer is translated back, because Kyrgyz search did not work and the two
+    languages are good at different halves of the job (see `kalys.kyrgyz`).
     English and Russian questions are untouched and cost no extra call.
     """
-    search_question, was_kyrgyz = question_to_russian(bedrock, question)
+    search_question, answer_question, was_kyrgyz = route_question(bedrock, question)
     contexts = gather_contexts(conn, embedder, search_question, limit)
     if not contexts:
         return "No matching articles were found for this question."
-    text = bedrock.ask(build_prompt(search_question, contexts))
+    # The prompt carries the question in the language the answer must come back
+    # in, which is not necessarily the one the search used.
+    text = bedrock.ask(build_prompt(answer_question, contexts))
     return answer_to_kyrgyz(bedrock, text) if was_kyrgyz else text
 
 
