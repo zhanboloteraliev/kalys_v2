@@ -1603,3 +1603,62 @@ defects in that label, either of which explains the report.
 - *Why not just translate the step name per language?* Because the wrapper
   word around it ("Using") is Chainlit's, not ours, so a translated name still
   produces a mixed sentence. Removing the wrapper removes the class of bug.
+
+## Step 20e: measuring the pipeline that ships, not a simpler one
+
+### What we built
+`kalys.evaluate` now routes every question through `question_to_russian`
+before searching, exactly as the chat does. The report gained a "Language
+routing" table and a `searched` column in the failure tables.
+
+### Why
+The harness fed the raw question straight to `hybrid_search`. The chat does
+not. So for Kyrgyz - the language the whole of Step 15 was about - the harness
+measured a code path nobody ships, and reported 0.10 where the truth was 0.93.
+Worse, the same gap let a real bug reach the live site: every Russian question
+was answered in Kyrgyz (Step 19), while 125 labelled questions and 133 tests
+passed. A test suite and an eval set can both be green and neither one is
+looking at what users get.
+
+### What we learned
+- **The numbers did not change; the measurement did.** Overall hit@10 went
+  0.82 -> 0.97 and MRR 0.663 -> 0.786 without touching retrieval. English and
+  Russian stayed exactly where they were, which is the proof that nothing was
+  improved - only that a sixth of the question set stopped measuring nothing.
+  A metric that moves when you fix the meter was never a metric.
+- **Make the bug you already had visible as a number.** The routing table
+  counts how many questions of each language were translated, and only `ky` may
+  be above zero. It reads en 0/90, ky 30/30, ru 0/55. Step 19 was verified with
+  six questions by hand; now 55 real Russian questions assert it on every run,
+  and a regression announces itself in the report instead of on the live site.
+- **Record the input the system actually used, not the one the user gave.**
+  The new `searched` column immediately split two look-alike failures: q100
+  failed because the translation turned "detaining a suspect" (article 96) into
+  "remand in custody" (article 114), while q116 failed with a perfectly good
+  translation - and so did the same question asked in Russian, which clears the
+  translator and indicts retrieval. Without that column both were just "Kyrgyz
+  question missed".
+- **Keep the ceiling measurement.** Hand-made translations score 0.97 / 0.828
+  against the real model's 0.93 / 0.753, so the prompt still loses about 0.075
+  MRR. Knowing the gap tells you whether tuning is worth the effort - without
+  it you cannot tell a hard problem from a lazy prompt.
+- **A surprise worth following up:** an *English* translation of a Kyrgyz
+  question retrieves better than a Russian one (1.00 / 0.873 vs 0.97 / 0.828).
+  The index holds English translations of every article, so the search
+  language and the answer language do not have to be the same.
+
+### Interview questions
+- *Your eval set passed and a bug still shipped. How?* Because the harness
+  called `hybrid_search` directly and the app called a routing step first. The
+  labels were right, the metrics were right, and they described a pipeline that
+  does not exist. An eval has to enter the system where the user does.
+- *How do you keep that from happening again?* By making the skipped step
+  produce a number in the report - the routing table - so the next time it
+  breaks, the report says so instead of a user.
+- *Why keep both a cheap and an expensive version of the harness?*
+  `KALYS_EVAL_ROUTE=0` is deterministic and free, which is what you want when
+  comparing two retrieval changes; routing on is what you want before shipping.
+  They answer different questions, and conflating them is how the gap appeared.
+- *You report 0.97 overall now instead of 0.82. Is that an improvement?* No,
+  and saying so would be dishonest. Nothing retrieves better than it did
+  yesterday; a sixth of the questions simply started being measured.

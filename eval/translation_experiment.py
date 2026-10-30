@@ -13,7 +13,17 @@ This script tests one possible fix - translate the question first, then search
 
 The translations in `ky_query_translations.json` were made by the assistant
 in-session, so this measures the ceiling of the approach rather than what a
-cheap runtime translator would manage. It calls no paid API.
+cheap runtime translator would manage.
+
+Still useful after Step 15 shipped the runtime version, because the two
+numbers answer different questions: `kalys.evaluate` now measures what the
+real model's translation achieves, and this measures what a perfect
+translation would. The gap between them is what better prompting could still
+win.
+
+It embeds with whatever `embedder_from_env` selects, which must be the model
+the stored vectors came from - it used to hard-code `LocalEmbedder`, which
+Step 14 replaced, so it measured against an index that no longer exists.
 """
 
 import json
@@ -21,7 +31,7 @@ from pathlib import Path
 
 import psycopg
 
-from kalys.embed import LocalEmbedder
+from kalys.embed import embedder_from_env
 from kalys.evaluate import DATABASE_URL, act_by_edition, load_questions, rank_of_first_hit
 from kalys.search import hybrid_search, reciprocal_rank_fusion
 
@@ -60,7 +70,7 @@ def search_with(conn, embedder, acts: dict[int, str], queries: list[str]) -> lis
 def main() -> None:
     translations = json.loads(TRANSLATIONS_FILE.read_text(encoding="utf-8"))
     questions = [q for q in load_questions() if q["lang"] == "ky"]
-    embedder = LocalEmbedder()
+    embedder = embedder_from_env()
 
     with psycopg.connect(DATABASE_URL) as conn:
         acts = act_by_edition(conn)

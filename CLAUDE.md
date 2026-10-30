@@ -457,6 +457,46 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   seen. Note that a Russian question misrouted as Kyrgyz (the Step 19 bug)
   would also show it - but that answer would come back in Kyrgyz too.
 
+- Step 20e (the eval harness measures the real pipeline): done 2026-10-29.
+  `kalys.evaluate` now sends every question through `question_to_russian`
+  first, exactly as the chat does, instead of feeding the raw question to
+  `hybrid_search`. This closes the gap recorded in Step 19. `KALYS_EVAL_ROUTE=0`
+  restores the old free, Bedrock-free behaviour for comparing two retrieval
+  changes; routing a full run costs about 85 small calls (English questions
+  never call the model).
+  **The numbers did not change - the measurement did.** Overall hit@10
+  0.82 -> **0.97** and MRR 0.663 -> **0.786**, because the 30 Kyrgyz questions
+  stopped measuring nothing: `ky` went from 0.10 / 0.034 to **0.93 / 0.753**.
+  English 0.97 / 0.770 and Russian 0.98 / 0.829 are unchanged, as they must be.
+  Questions with nothing correct in the top 10: 31 -> **6**.
+  **A standing detector for the Step 19 bug.** The report has a "Language
+  routing" table counting how many questions of each language were translated.
+  Only `ky` may be above zero. It now reads en 0/90, ky 30/30, ru 0/55 - 55
+  real Russian questions prove the routing is right, where Step 19 had 6 manual
+  checks.
+  **The failure tables now show what the search was actually given**, which
+  separates a translation failure from a retrieval failure. Two examples: q100
+  ("Шектүүнү кармоо" - detaining a suspect, article 96) was translated as
+  `заключение под стражу`, which is remand in custody, article 114 - the same
+  near-synonym class as `кыйноо`/`истязание` in Step 15; while q116 (bride
+  kidnapping) was translated correctly and still failed, and so did q086, the
+  same question *asked* in Russian - so there the translation is innocent and
+  retrieval is the problem.
+  **How much the translation still costs:** against the hand-made ceiling in
+  `eval/ky_query_translations.json`, a perfect Russian translation scores
+  0.97 / 0.828, so the real model loses about 0.075 MRR. Worth knowing before
+  tuning that prompt again.
+  **An English translation of a Kyrgyz question retrieves better than a Russian
+  one**: 1.00 / 0.873 against 0.97 / 0.828 (ceiling figures, both hand-made).
+  The index holds English translations of every article, so searching in
+  English while still answering through Russian is a real candidate for a next
+  step - the chat routes through Russian today because the *answer* has to be
+  produced from Russian sources and translated back (Step 15).
+  `eval/translation_experiment.py` is no longer stale: it hard-coded
+  `LocalEmbedder`, which Step 14 replaced, and now uses `embedder_from_env`.
+  It is kept because it answers a different question from the harness - the
+  ceiling, not the real result.
+
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

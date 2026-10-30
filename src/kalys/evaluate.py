@@ -11,17 +11,32 @@ numbers say whether the change was an improvement:
 
     uv run python -m kalys.evaluate
 
-It writes `eval_report.md` and prints a summary. It never calls Bedrock - only
-retrieval is measured here, so running it costs nothing.
+It writes `eval_report.md` and prints a summary.
+
+Each question goes through `question_to_russian` first, exactly as the chat
+does, so what is measured is the pipeline a user actually gets. That costs one
+small Bedrock call per question written in Cyrillic (English questions are
+returned untouched without a call). Before Step 20e the harness skipped that
+step and fed the raw question to the search, which made the 30 Kyrgyz
+questions measure nothing at all - they scored 0.10 while the real figure was
+0.97 - and let a bug ship in which every Russian question was answered in
+Kyrgyz, unnoticed by 133 passing tests.
+
+Set `KALYS_EVAL_ROUTE=0` for the old behaviour: retrieval only, no Bedrock,
+no cost. Useful when comparing two retrieval changes, where the routing is
+not what is being measured.
 """
 
 import json
 import os
+from functools import partial
 from pathlib import Path
 
 import psycopg
 
+from kalys.answer import BedrockClient
 from kalys.embed import check_embedder_matches, embedder_from_env
+from kalys.kyrgyz import question_to_russian
 from kalys.search import hybrid_search
 
 QUESTIONS_FILE = Path("eval/questions.jsonl")
@@ -32,6 +47,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://kalys:kalys@localhos
 # an article found at rank 11 is one the model never sees.
 LIMIT = 10
 K_VALUES = (1, 3, 5, 10)
+
+# Whether to send each question through the chat's own language routing first.
+# On by default, because a measurement of a different pipeline than the one
+# that ships is not a measurement.
+ROUTE_QUESTIONS = os.environ.get("KALYS_EVAL_ROUTE", "1") != "0"
 
 Article = tuple[str, str]  # (act slug, article number)
 
@@ -101,18 +121,30 @@ def summarise(records: list[dict]) -> dict:
     return summary
 
 
-def run(conn, embedder, questions: list[dict]) -> list[dict]:
-    """Search for every question and record where the correct articles landed."""
+def run(conn, embedder, questions: list[dict], route=None) -> list[dict]:
+    """Search for every question and record where the correct articles landed.
+
+    `route` is the chat's language routing: given the question as asked, it
+    returns the question to search with and whether it was Kyrgyz. It is passed
+    in rather than called directly so that tests can supply a fake and stay
+    free and deterministic; `main` supplies the real one.
+    """
     acts = act_by_edition(conn)
     records = []
     for question in questions:
-        hits = hybrid_search(conn, embedder, question["question"], limit=LIMIT)
+        asked = question["question"]
+        searched, was_kyrgyz = route(asked) if route else (asked, False)
+        hits = hybrid_search(conn, embedder, searched, limit=LIMIT)
         results = [(acts.get(edition_id, "?"), number) for edition_id, number in hits]
         gold = [(e["act"], e["article"]) for e in question["expect"]]
         records.append(
             {
                 "id": question["id"],
-                "question": question["question"],
+                "question": asked,
+                # What the search actually received. The same as the question
+                # unless the routing translated it.
+                "searched": searched,
+                "routed": was_kyrgyz,
                 "lang": question["lang"],
                 "kind": question["kind"],
                 "act": gold[0][0],
@@ -150,6 +182,23 @@ def group_by(records: list[dict], field: str) -> dict[str, list[dict]]:
     return dict(sorted(groups.items()))
 
 
+def routing(records: list[dict]) -> str:
+    """How many questions the language routing translated, per language.
+
+    This is the standing check for the Step 19 bug, where every Russian
+    question was treated as Kyrgyz. Only the `ky` row should be above zero: a
+    translated Russian question is one the chat would answer in Kyrgyz, and a
+    translated English question is a Bedrock call that should not happen at
+    all.
+    """
+    header = ["", "questions", "translated to Russian"]
+    lines = ["### Language routing", "", "| " + " | ".join(header) + " |", "|" + " --- |" * 3]
+    for lang, group in group_by(records, "lang").items():
+        lines.append(f"| {lang} | {len(group)} | {sum(1 for r in group if r['routed'])} |")
+    lines += ["", "Only `ky` should be above zero.", ""]
+    return "\n".join(lines)
+
+
 def report(records: list[dict]) -> str:
     """The full Markdown report, including the questions that failed."""
     parts = [
@@ -162,16 +211,18 @@ def report(records: list[dict]) -> str:
         table("By language", group_by(records, "lang")),
         table("By act", group_by(records, "act")),
         table("By kind of question", group_by(records, "kind")),
+        routing(records),
     ]
 
     missed = [r for r in records if r["found_at"] is None]
     parts.append(f"### Found nothing correct in the top {LIMIT} ({len(missed)})\n")
     if missed:
-        parts.append("| id | lang | question | expected |")
-        parts.append("| --- | --- | --- | --- |")
+        parts.append("| id | lang | question | searched | expected |")
+        parts.append("| --- | --- | --- | --- | --- |")
         for r in missed:
             gold = ", ".join(f"{act} {number}" for act, number in r["gold"])
-            parts.append(f"| {r['id']} | {r['lang']} | {r['question']} | {gold} |")
+            searched = r["searched"] if r["routed"] else ""
+            parts.append(f"| {r['id']} | {r['lang']} | {r['question']} | {searched} | {gold} |")
     else:
         parts.append("None.")
     parts.append("")
@@ -182,12 +233,14 @@ def report(records: list[dict]) -> str:
     )
     parts.append(f"### Correct article found, but below rank 3 ({len(weak)})\n")
     if weak:
-        parts.append("| id | lang | rank | question | expected |")
-        parts.append("| --- | --- | --- | --- | --- |")
+        parts.append("| id | lang | rank | question | searched | expected |")
+        parts.append("| --- | --- | --- | --- | --- | --- |")
         for r in weak:
             gold = ", ".join(f"{act} {number}" for act, number in r["gold"])
+            searched = r["searched"] if r["routed"] else ""
             parts.append(
-                f"| {r['id']} | {r['lang']} | {r['found_at']} | {r['question']} | {gold} |"
+                f"| {r['id']} | {r['lang']} | {r['found_at']} | {r['question']} "
+                f"| {searched} | {gold} |"
             )
     else:
         parts.append("None.")
@@ -198,9 +251,12 @@ def report(records: list[dict]) -> str:
 def main() -> None:
     questions = load_questions()
     embedder = embedder_from_env()
+    route = partial(question_to_russian, BedrockClient()) if ROUTE_QUESTIONS else None
+    if route is None:
+        print("Routing off (KALYS_EVAL_ROUTE=0): Kyrgyz questions measure nothing.")
     with psycopg.connect(DATABASE_URL) as conn:
         check_embedder_matches(conn, embedder)
-        records = run(conn, embedder, questions)
+        records = run(conn, embedder, questions, route)
 
     REPORT_FILE.write_text(report(records), encoding="utf-8")
 
