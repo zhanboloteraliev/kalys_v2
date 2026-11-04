@@ -1,0 +1,15 @@
+# Runs the idle check every 5 minutes.
+#
+# OnBootSec is deliberately short: the check itself treats boot time as
+# activity, so a freshly woken instance always gets a full idle window before
+# it can sleep again.
+[Unit]
+Description=Check every few minutes whether the Kalys instance can sleep
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

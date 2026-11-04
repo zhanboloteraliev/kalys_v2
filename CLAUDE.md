@@ -558,6 +558,54 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   written. The value is right and the article numbers are right. Earlier
   Kyrgyz answers named the act in Kyrgyz (`Эмгек кодекси`), so this varies
   between runs.
+- Step 21 (wake on demand, so the server can sleep): **built, not yet set
+  up.** All the code and the runbook are in; every AWS resource is the
+  owner's console step. See `docs/wake-on-demand.md`, which is the whole
+  procedure in order.
+  Why: the instance costs about **$21/month** running all day and is idle most
+  of it. Asleep it is about **$7/month**. What does *not* go away is the disk
+  ($2.40) and the public IPv4 address ($3.65), which are charged whether it
+  runs or not - **$6/month is the floor**, and the saving is the compute,
+  about $14/month. Prices us-east-1, checked 2026-11-04.
+  **Sleeping was free to build.** `InstanceInitiatedShutdownBehavior` is
+  `stop`, so `shutdown -h now` from inside stops the instance and keeps the
+  disk: no credentials, no IAM permission, no scheduler.
+  `deploy/sleep-when-idle.sh` plus `kalys-sleep.timer` check every 5 minutes.
+  Idleness is the **modification time of Caddy's access log**, not its
+  contents - Caddy touches it on every request, so no parsing. Three things
+  deliberately keep it awake: an open SSM session (so it cannot sleep under
+  you while you work), an open connection on port 8000 up to an hour (a
+  visitor mid-answer), and **boot time counts as activity**, without which a
+  woken instance would see a log file last touched yesterday and go straight
+  back to sleep under the visitor who just woke it.
+  **Waking is the hard half**, because while the instance is asleep nothing
+  answers at kalys.eraliev.com. CloudFront goes in front with an *origin
+  group*: the instance first, and a Lambda (`deploy/waker/`) as failover. The
+  Lambda calls `StartInstances` and returns a waiting page that polls and
+  reloads. Both halves of that page were tested locally against a fake status
+  endpoint before being written down.
+  Four things in the runbook are easy to get wrong and are called out there:
+  **CloudFront's origin response timeout defaults to 30s and a Kyrgyz answer
+  takes about 40** (it is translated after being written, so nothing streams)
+  - it must be raised to 60 or every Kyrgyz answer is cut off; the origin
+  request policy must be **AllViewer** so the app sees the visitor's `Host`
+  and Chainlit does not hand browsers the origin's name and route them around
+  CloudFront; the cache policy must be **CachingDisabled** or WebSockets do
+  not pass; and `origin.eraliev.com` must keep pointing straight at the
+  Elastic IP, because Caddy's Let's Encrypt renewal needs to be reachable
+  directly.
+  The waiting page itself has a guard worth keeping: it treats a non-JSON
+  answer as "the app is back", **but not in the first 12 seconds** - no
+  instance boots that fast, so an early error means a misconfigured status
+  URL, and without the guard the visitor is bounced to a site that is still
+  down, which fails over back to the waiting page, for ever. That was found
+  by testing, not by reading.
+  A second Route 53 record (`origin`) is needed. The rule above still holds
+  otherwise: only the `kalys` record changes, and it changes to an alias
+  pointing at CloudFront.
+  The Lambda's Function URL is public, because the visitor's browser polls it.
+  Worst case someone keeps the instance awake, which costs what running it all
+  day costs today; the role can only start and describe that one instance.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.

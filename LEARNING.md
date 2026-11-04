@@ -1773,3 +1773,72 @@ twice.
   the whole clip: once because the zoom ran at 4x upscale on 6048x3236 frames,
   once because `paletteuse` was waiting on `palettegen` in the same command.
   Streaming beats buffering whenever the machine is small.
+
+## Step 21: letting the server sleep, and waking it for a visitor
+
+### What we built
+The instance stops itself when the site has been idle, and starts again when
+somebody arrives. About $21/month becomes about $7. Code in
+`deploy/sleep-when-idle.sh`, `deploy/kalys-sleep.*` and `deploy/waker/`; the
+procedure is `docs/wake-on-demand.md`.
+
+### Why
+A personal project is idle almost all the time. Paying for a server that is
+awake twenty-three hours a day to answer questions for one is the single
+largest cost in this project - larger than Bedrock.
+
+### What we learned
+- **Read the bill before designing.** Of the $21, only about $15 is compute.
+  The disk and the public IPv4 address are charged whether the instance runs
+  or not, so $6/month is the floor and no amount of cleverness goes below it.
+  That reframed the work: the prize is $14, not $21, and it set the budget for
+  how much complexity was worth adding.
+- **Sleeping cost nothing to build.** `InstanceInitiatedShutdownBehavior` is
+  `stop`, so the machine can stop itself from the inside with `shutdown -h
+  now` - no credentials on the box, no IAM permission, no external scheduler.
+  Checking one instance attribute removed a whole Lambda from the design.
+- **The simplest idleness signal was a file's timestamp.** Caddy touches its
+  access log on every request, so `stat -c %Y` is the time of the last
+  request. No log parsing, no application change, nothing to keep in sync.
+- **Boot time has to count as activity.** Without that, a woken instance looks
+  at a log file last touched yesterday and goes straight back to sleep under
+  the visitor who just woke it. An obvious bug in hindsight and an invisible
+  one in the code, because nothing about `idle = now - last_request` looks
+  wrong.
+- **Waking is the hard half, and it is a routing problem, not a compute one.**
+  While the instance is asleep, something always-on has to answer its
+  hostname. CloudFront's origin group does it: the instance first, a Lambda as
+  failover. The Lambda starts the instance and serves a page that waits.
+- **A fallback page can loop.** The page treats a non-JSON answer as "the app
+  is back", which is what lets it work whether it polls the site or the Lambda
+  directly. But if the status URL is simply wrong, that rule fires instantly,
+  sends the visitor to a site that is still down, fails over back to the
+  waiting page, and repeats for ever. A 12-second guard fixes it: nothing
+  boots that fast, so an early error means misconfiguration, not recovery.
+  Found by testing the page against a fake endpoint - it redirected within two
+  seconds, which was obviously wrong on screen and invisible in review.
+- **A timeout default can be a correctness bug.** CloudFront's origin response
+  timeout is 30 seconds. A Kyrgyz answer takes about 40, because it is written
+  in Russian and then translated, so nothing streams until it is finished. Put
+  CloudFront in front without changing that number and every Kyrgyz answer is
+  cut off - while English and Russian, which stream, look perfect.
+
+### Interview questions
+- *How do you make a demo cheap to host without taking it offline?* Let it
+  sleep and put something always-on in front that can wake it. The visitor
+  trades about forty seconds for a server that costs a third as much - and
+  they are told that, on the page, while they wait.
+- *Why CloudFront rather than a scheduler?* A schedule guesses when visitors
+  come. Origin failover does not guess: the first visitor after a sleep pays
+  the wake-up, and nobody else does. It also costs nothing at this traffic,
+  where an Application Load Balancer would cost more than the server.
+- *What is the risk of a public endpoint that starts an instance?* That
+  someone keeps it awake. The cost is bounded by what running it all day costs
+  anyway, and the role can start and describe exactly one instance, so the
+  worst case is today's bill rather than an unbounded one. Naming the bound is
+  the answer - not claiming there is no risk.
+- *What broke when you put a CDN in front of an existing app?* Three defaults:
+  caching had to be disabled for WebSockets to pass, the `Host` header had to
+  be forwarded or the app handed browsers the origin's name and routed them
+  around the CDN, and the origin response timeout was shorter than the slowest
+  answer.

@@ -12,12 +12,32 @@
 # check uses to tell Cloudflare who the visitor is.
 #
 # Change the hostname here if the domain ever changes.
+#
+# Two names, since the wake-on-demand setup (docs/wake-on-demand.md):
+#   kalys.eraliev.com  - what visitors type. It now resolves to CloudFront.
+#   origin.eraliev.com - the same machine, resolving straight to the Elastic
+#                        IP. CloudFront connects here, and it needs a
+#                        certificate that matches the name it dials, which is
+#                        why the name is listed rather than just proxied.
+# Both are served by the same block, so a request arriving either way is
+# handled identically.
 
-kalys.eraliev.com {
+kalys.eraliev.com, origin.eraliev.com {
 	encode zstd gzip
 
 	# Let's Encrypt emails this address before a certificate expires.
 	tls ezhanbolot@gmail.com
+
+	# The access log is how the instance knows whether anybody is using the
+	# site: deploy/sleep-when-idle.sh reads this file's modification time, not
+	# its contents. Without this directive Caddy logs to the journal instead
+	# and there is no file to look at.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
 
 	reverse_proxy 127.0.0.1:8000
 }

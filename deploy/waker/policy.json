@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "StartOnlyTheKalysInstance",
+            "Effect": "Allow",
+            "Action": "ec2:StartInstances",
+            "Resource": "arn:aws:ec2:us-east-1:787013172660:instance/i-0aa39205f5024aa85"
+        },
+        {
+            "Sid": "ReadInstanceState",
+            "Effect": "Allow",
+            "Action": "ec2:DescribeInstances",
+            "Resource": "*"
+        }
+    ]
+}

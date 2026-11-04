@@ -1,0 +1,12 @@
+# Checks whether the site has been idle, and stops the instance if it has.
+# Paired with kalys-sleep.timer, which runs it every few minutes.
+[Unit]
+Description=Stop the Kalys instance when the site has been idle
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ubuntu/kalys_v2/deploy/sleep-when-idle.sh
+# How long with no request before sleeping. Raise it if visitors are being cut
+# off mid-session; lower it to save more.
+Environment=KALYS_IDLE_MINUTES=20
