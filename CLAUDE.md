@@ -437,9 +437,8 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   measured separately. Worth fixing when Kyrgyz is next touched, together with
   the Step 19 gap (the harness still never calls `question_to_russian`, so the
   `ky` column in `eval_report.md` reads ~0.10 and measures nothing).
-- Step 20d (the "please wait" label in the chat): fixed locally 2026-10-28,
-  **not deployed** (a code change, so it needs `git pull` *and*
-  `sudo systemctl restart kalys` on the box). A Kyrgyz question cannot be
+- Step 20d (the "please wait" label in the chat): fixed 2026-10-28,
+  **deployed and verified live 2026-11-03**. A Kyrgyz question cannot be
   streamed, so Step 15 filled the wait with a `cl.Step` named
   "Жооп даярдалууда". Two things were wrong with that. Chainlit wraps a step
   name in its own UI language, so it read **"Using Жооп даярдалууда"** - half
@@ -498,8 +497,7 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   ceiling, not the real result.
 
 - Step 20f (a Kyrgyz question is searched in English): done 2026-10-29,
-  **not deployed** (code change: needs `git pull` and
-  `sudo systemctl restart kalys` on the box). Step 20e measured that an
+  **deployed and verified live 2026-11-03**. Step 20e measured that an
   English translation of a Kyrgyz question retrieves better than a Russian
   one, so `kalys.kyrgyz.route_question` now returns **two** questions: the
   English one to search with and the Russian one to answer from. The search
@@ -543,6 +541,23 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   The README's figures were also stale - it still said 86,527 articles across
   91 editions, from before the Labour Code; it now says 90,280 across 98.
 
+- Deploy of 2026-11-03 (`6bad659..71c6583`): the box was 4 commits behind and
+  is now current; `systemctl is-active kalys` reads `active`. Verified on the
+  live site with a Kyrgyz question about notice periods for leaving a job. The
+  answer came back in Kyrgyz citing Labour Code articles 43, 46, 169 and 170,
+  and every figure was checked against the stored English text: employer
+  notice 1 month (46 part 3), 2 weeks for health or insufficient qualification
+  (46 part 5), 3 calendar days on contracts up to 2 months (169 parts 5 and 6),
+  7 calendar days for seasonal workers being made redundant (170 part 7), and
+  1 month to resign (43 part 1). The waiting placeholder appeared as plain
+  `Жооп даярдалууда...` with no English wrapper and left nothing behind.
+  One cosmetic drift seen, not a data error: the citations rendered as
+  `(Трудовой кодекс, статья 46, редакция от 28.07.2026)` - the act name and
+  labels in Russian, and the edition date reformatted from `2026-07-28` to
+  `28.07.2026`, although `TO_KYRGYZ_PROMPT` says to keep the date exactly as
+  written. The value is right and the article numbers are right. Earlier
+  Kyrgyz answers named the act in Kyrgyz (`Эмгек кодекси`), so this varies
+  between runs.
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.
 - No DNS work done.
