@@ -69,11 +69,21 @@ instance:
 
 ```bash
 cd ~/kalys_v2 && git pull
-sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
 sudo cp deploy/Caddyfile /etc/caddy/Caddyfile
 sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 sudo systemctl reload caddy
 ```
+
+The access log goes in `/var/lib/caddy`, beside Caddy's certificates, rather
+than in `/var/log/caddy`. The conventional path was tried first and Caddy
+refused it with `permission denied` although the directory was `caddy:caddy`
+and mode 755 - so something other than file permissions, most likely an
+AppArmor profile or the namespace of the already-running process. Rather than
+chase that, the log went where Caddy demonstrably writes already.
+
+Note that the failed reload did **not** take the site down: Caddy keeps serving
+the previous configuration when a new one will not load. That is the reason to
+prefer `reload` over `restart` on a live machine.
 
 Caddy will ask Let's Encrypt for a certificate covering `origin.eraliev.com`.
 That only works because step 1 points the name straight at the Elastic IP.

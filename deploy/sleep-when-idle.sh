@@ -16,7 +16,7 @@
 set -euo pipefail
 
 IDLE_MINUTES=${KALYS_IDLE_MINUTES:-20}
-ACCESS_LOG=${KALYS_ACCESS_LOG:-/var/log/caddy/access.log}
+ACCESS_LOG=${KALYS_ACCESS_LOG:-/var/lib/caddy/access.log}
 APP_PORT=${KALYS_APP_PORT:-8000}
 # A browser tab left open holds a WebSocket for ever, so an open connection
 # cannot mean "stay awake" without a limit. After this long with no new

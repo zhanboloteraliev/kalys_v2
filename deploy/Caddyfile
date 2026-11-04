@@ -32,8 +32,17 @@ kalys.eraliev.com, origin.eraliev.com {
 	# site: deploy/sleep-when-idle.sh reads this file's modification time, not
 	# its contents. Without this directive Caddy logs to the journal instead
 	# and there is no file to look at.
+	#
+	# It lives in /var/lib/caddy, not the conventional /var/log/caddy, because
+	# the latter failed with "permission denied" even owned by caddy:caddy and
+	# mode 755 - most likely an AppArmor profile or the sandbox the running
+	# process was started with, not plain file permissions. /var/lib/caddy is
+	# where Caddy already stores its certificates, so it is proven writable,
+	# and keeping it there means this change applies with a reload rather than
+	# a restart. A failed reload leaves the old config serving; a failed
+	# restart takes the site down.
 	log {
-		output file /var/log/caddy/access.log {
+		output file /var/lib/caddy/access.log {
 			roll_size 10MiB
 			roll_keep 3
 		}
