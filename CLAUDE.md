@@ -522,14 +522,26 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   translation fails or comes back with Cyrillic in it, the search falls back to
   Russian, which is what shipped before - a bad translation costs retrieval
   quality, never correctness.
-- A demo GIF pipeline lives in `scripts/make_demo_gif.sh`: six real
-  screenshots in, one smooth GIF (and an MP4) out. The old `assets/demo.gif`
-  was 5 frames at 0.34 fps, which is a slideshow. **The rebuild has not been
-  run to completion yet** - the first attempt was killed for system memory
-  pressure, and the script has since been made much lighter (upscale 2x
-  instead of 4x, and scenes that do not zoom skip the upscale). Frames are
-  captured and ready. The four things that make a zoom smooth are written at
-  the top of the script.
+- Demo GIF rebuilt 2026-11-03. `assets/demo.gif` was **5 frames at 0.34 fps**
+  - a slideshow, which is what the browser extension's frame capture produces.
+  It is now **192 frames at 20 fps, 860x460, 9.6 seconds, 5.2 MB**: the chat
+  empty, the question typed, the answer appearing, then a slow zoom that ends
+  on the citations, readable. Built by `scripts/make_demo_gif.sh` from five
+  real screenshots - run it again after any UI change:
+  `./scripts/make_demo_gif.sh <frames-dir> assets/demo.gif`. It also writes an
+  MP4 beside the GIF (1.3 MB, a quarter of the size) in case the README ever
+  moves to `<video>`; that file is not committed.
+  The five rules that make a zoom smooth are written at the top of the script.
+  Four traps were hit while building it, all now documented there: `zoompan`'s
+  `d` is frames emitted *per input frame*, so pairing it with `-loop 1 -t`
+  multiplies the two and produced a 294-second, 351 MB GIF (use `-frames:v`);
+  chaining `palettegen` to `paletteuse` with `split` in one command holds the
+  whole clip in memory and gets ffmpeg killed (write the palette to a PNG and
+  make a second pass); `grep -q` on an ffmpeg pipe closes it early and under
+  `pipefail` reads as "encoder not found"; and a GIF stores frame delays in
+  hundredths of a second, so 18 fps is written as 5cs and plays at 20 anyway.
+  The README's figures were also stale - it still said 86,527 articles across
+  91 editions, from before the Labour Code; it now says 90,280 across 98.
 
 - `kalysdev` was never widened: it is still Bedrock-only, and the instance,
   role, and security group were all created by the owner in the console.

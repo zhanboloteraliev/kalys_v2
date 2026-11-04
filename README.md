@@ -5,12 +5,12 @@
 Ask a legal question in any of the three languages. Kalys answers in the same language
 and cites the exact source: the act, article, part, and edition date.
 
-![Kalys answering a question about detention procedure](assets/demo.gif)
+![Kalys answering a question about annual paid leave, citing the Labour Code](assets/demo.gif)
 
 *A real answer from the running app. Every point carries the act, the article number, and
 the edition date it came from.*
 
-> **Live at [kalys.eraliev.com](https://kalys.eraliev.com).** 86,527 articles across 91
+> **Live at [kalys.eraliev.com](https://kalys.eraliev.com).** 90,280 articles across 98
 > editions, hybrid search, and answers from Amazon Bedrock grounded in the retrieved text.
 > Runs on one small AWS instance behind Caddy, with a Cloudflare Turnstile check at the
 > door - every answer costs money, so automated traffic is kept out without asking a

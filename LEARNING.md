@@ -1719,3 +1719,57 @@ instructions in worst. So the two languages do different halves of the job.
 - *How do you know the gain is from the language and not from luck?* English
   and Russian questions were measured in the same run and did not move at all,
   because nothing in their path changed. Only the Kyrgyz rows moved.
+
+## Step 20g: a demo GIF that is actually animated
+
+### What we built
+`scripts/make_demo_gif.sh` turns a handful of real screenshots into a smooth
+GIF: 192 frames at 20 fps, ending on a slow zoom into the citations. The old
+`assets/demo.gif` was **5 frames at 0.34 fps** - each frame held for three
+seconds, which is a slideshow, not a demo.
+
+### Why
+The browser extension can take screenshots but cannot record video, and
+recording the whole desktop catches whatever else is on it. The answer is that
+smooth GIFs are not recorded, they are *built*: five sharp stills plus ffmpeg
+beats a screen capture, because no frame is dropped and nothing is compressed
+twice.
+
+### What we learned
+- **The smooth-zoom trick is to upscale first.** `zoompan` rounds the crop
+  origin to whole pixels *of its input*, so a slow zoom on an image no bigger
+  than the output moves in visible jerks. What matters is the ratio of input
+  width to output width - about 3x is plenty.
+- **`zoompan`'s `d` is frames per INPUT frame.** Pairing it with `-loop 1 -t`
+  feeds it 25 input frames a second and multiplies the two: the first run
+  produced a 294-second, 351 MB GIF from a 10-second storyboard. `-frames:v`
+  caps the output, which is what was meant.
+- **"Two-pass palette" means two passes, through a file.** Chaining
+  `palettegen` into `paletteuse` with `split` in one command looks tidier and
+  is a memory trap: `paletteuse` cannot start until `palettegen` has seen the
+  last frame, so the entire clip sits in memory. ffmpeg was killed twice before
+  this was separated into two commands with a `palette.png` between them.
+- **`grep -q` on a pipe lies under `pipefail`.** It closes the pipe on the
+  first match, the writer takes SIGPIPE, and the pipeline reports failure - so
+  the MP4 companion was silently skipped although the encoder was present.
+  Read the output into a variable and match with `case` instead.
+- **A GIF stores frame delays in hundredths of a second.** Asking for 18 fps
+  writes 5cs per frame, which plays at 20. Pick a rate that divides 100, or
+  the file does not do what the script says it does.
+- **Lossless intermediates, one lossy step.** Five crossfades through a lossy
+  codec stack up artefacts on flat UI. `ffv1` between the stages costs disk in
+  a temp directory and nothing else.
+
+### Interview questions
+- *Why not record the screen?* Because the capture tool available takes stills,
+  not video, and a desktop recording catches everything else on the screen.
+  Building from stills also means every frame is sharp and the timing is
+  chosen rather than whatever the recorder managed.
+- *Your first GIF was 351 MB. What happened?* A units bug: `zoompan`'s
+  duration is per input frame, and the input was an infinite loop of frames, so
+  the intended 10 seconds became 294. The lesson is to check the output's
+  frame count against the storyboard, not just that the command succeeded.
+- *Why did ffmpeg get killed twice?* Both times the filter graph had to buffer
+  the whole clip: once because the zoom ran at 4x upscale on 6048x3236 frames,
+  once because `paletteuse` was waiting on `palettegen` in the same command.
+  Streaming beats buffering whenever the machine is small.
