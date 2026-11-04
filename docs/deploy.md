@@ -386,13 +386,37 @@ configuration. Everything above returns settings, never credentials.
 
 ## Running it day to day
 
-On the instance:
+These run **on the instance**, not on the laptop. To get there:
 
 ```bash
+AWS_PROFILE=kalys aws ssm start-session --target i-0aa39205f5024aa85
+```
+
+A session logs in as `ssm-user`, and the project belongs to `ubuntu`:
+
+```bash
+sudo su - ubuntu                 # then you are in /home/ubuntu
 sudo journalctl -u kalys -f      # live logs
 sudo systemctl restart kalys     # after a git pull
 cd kalys_v2 && git pull && sudo systemctl restart kalys
 ```
+
+Or run one command from the laptop without logging in at all:
+
+```bash
+./deploy/box.sh 'cd ~/kalys_v2 && git pull && sudo systemctl restart kalys'
+./deploy/box.sh 'systemctl is-active kalys' 8
+```
+
+`deploy/box.sh` wraps the command in `sudo -u ubuntu bash -lc` and holds stdin
+open while it runs. It types the command into a session because `kalysdev` is
+allowed `ssm:StartSession` but not `ssm:SendCommand`, so there is no way to
+send a command as data - and with port 22 closed there is no
+`ssh box 'command'` either.
+
+**A deploy is only needed for a code change.** A data-only change (new acts,
+new translations, new embeddings) is picked up live, because `web.py` and
+`answer.py` open a fresh connection per question - see section 4b.
 
 To stop paying for compute, stop the instance in the console (**Stop**, not
 Terminate - Terminate deletes the disk and the database with it). After a
