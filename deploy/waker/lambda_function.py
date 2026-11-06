@@ -38,6 +38,41 @@ EXPECTED_SECONDS = int(os.environ.get("KALYS_EXPECTED_SECONDS", "45"))
 
 ec2 = boto3.client("ec2")
 
+# Substrings that appear in the User-Agent of things that are not a person.
+# Googlebot and friends all carry "Mozilla" too, so the allow-list below is not
+# enough on its own.
+BOT_HINTS = (
+    "bot", "crawl", "spider", "slurp", "curl", "wget", "python-requests",
+    "scanner", "scrapy", "masscan", "zgrab", "httpx", "nuclei", "semrush",
+    "ahrefs", "headlesschrome", "go-http-client", "libwww", "okhttp",
+)
+
+ROBOTS = """User-agent: *
+Disallow: /
+"""
+
+
+def looks_like_a_person(headers: dict) -> bool:
+    """Whether this request is a browser opening the page, rather than a robot.
+
+    Waking the instance costs money, and it happens before the Turnstile gate
+    can refuse anyone - the gate lives in the app, which is asleep. So the
+    filter has to be here, and it has to be cheap and conservative.
+
+    Three signals, all from headers the error-page request still carries:
+    a top-level page load asks for HTML, every real browser says "Mozilla",
+    and robots usually announce themselves. Getting this wrong in the strict
+    direction is harmless: a request that fails the test is still offered a
+    link that wakes the instance when clicked, and no robot clicks a link.
+    """
+    accept = headers.get("accept", "")
+    agent = headers.get("user-agent", "").lower()
+    if "text/html" not in accept:
+        return False
+    if "mozilla" not in agent:
+        return False
+    return not any(hint in agent for hint in BOT_HINTS)
+
 
 def instance_state() -> str:
     """One of pending, running, stopping, stopped, shutting-down, terminated."""
@@ -85,6 +120,19 @@ def html_response(body: str, status: int = 200) -> dict:
 
 def lambda_handler(event, context):  # noqa: ARG001 - the runtime passes both
     path = event.get("requestContext", {}).get("http", {}).get("path", "/")
+    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    query = event.get("queryStringParameters") or {}
+
+    if path.rstrip("/").endswith("/robots.txt"):
+        # Answered here rather than by the app, so a crawler gets a real answer
+        # without the instance having to be awake to give it. Disallow, because
+        # anything a crawler indexes while the instance sleeps would be the
+        # waiting page, and because crawling costs wake-ups.
+        return {
+            "statusCode": 200,
+            "headers": {"content-type": "text/plain", "cache-control": "max-age=86400"},
+            "body": ROBOTS,
+        }
 
     if path.rstrip("/").endswith("/status"):
         try:
@@ -93,6 +141,12 @@ def lambda_handler(event, context):  # noqa: ARG001 - the runtime passes both
             print(f"describe failed: {error}")
             return json_response({"state": "unknown"}, status=200)
         return json_response({"state": state})
+
+    # `?wake=1` is the link on the page below: an explicit request from
+    # somebody who is actually looking at a screen.
+    if query.get("wake") != "1" and not looks_like_a_person(headers):
+        print(f"not waking for {headers.get('user-agent', '-')[:80]!r}")
+        return html_response(asleep_page())
 
     try:
         state, started = wake()
@@ -217,5 +271,51 @@ def waiting_page() -> str:
   setInterval(check, 3000);
   setTimeout(check, 1500);
 </script>
+</body>
+</html>"""
+
+
+def asleep_page() -> str:
+    """Shown to a request that does not look like a person opening the page.
+
+    Deliberately not an error: a robot gets something cheap and harmless, and
+    anybody the filter judged wrongly gets a link that wakes the instance. One
+    click is a small price for never turning a real visitor away, and a robot
+    does not click.
+    """
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Kalys is asleep</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex;
+    align-items: center; justify-content: center;
+    background: #000; color: #ededed; padding: 24px; text-align: center;
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { font-size: 1.6rem; margin: 0 0 .5rem; }
+  p { color: #a1a1a1; max-width: 26rem; }
+  a.wake {
+    display: inline-block; margin-top: 1.5rem; padding: .7rem 1.4rem;
+    background: #e11d62; color: #fff; text-decoration: none; border-radius: 999px;
+    font-weight: 600;
+  }
+  a.wake:hover { background: #c4164f; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The server is asleep</h1>
+  <p>
+    Kalys runs on one small server that stops itself when nobody is using it.
+    Starting it takes about 45 seconds.
+  </p>
+  <a class="wake" href="?wake=1">Wake the server</a>
+</main>
 </body>
 </html>"""

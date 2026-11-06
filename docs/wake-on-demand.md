@@ -307,6 +307,23 @@ sudo /home/ubuntu/kalys_v2/deploy/sleep-when-idle.sh   # prints why, or nothing
 journalctl -t kalys-sleep -n 20
 ```
 
+## 7b. Do not wake for robots
+
+Waking costs money and happens *before* the Turnstile gate can refuse anyone -
+the gate lives in the app, which is asleep. So the filter has to live in the
+waker. `looks_like_a_person` asks three cheap questions of the headers the
+error-page request still carries: does it want HTML, does it claim to be a
+browser, and does it name itself as a robot.
+
+A request that fails is **not** turned away. It gets a small page with a
+"Wake the server" link, which wakes on `?wake=1`. A robot never clicks it, and
+anybody the filter misjudged loses one click rather than being locked out.
+
+`/robots.txt` has its own cache behaviour pointing at the waker, so a crawler
+gets `Disallow: /` without the instance needing to be awake to say it. The
+trade-off is that the site will not appear in search results. Change `ROBOTS`
+in `lambda_function.py` if that is ever worth more than the wake-ups.
+
 ## 8. Test the whole cycle
 
 1. Stop the instance by hand (console, or wait 20 idle minutes).
