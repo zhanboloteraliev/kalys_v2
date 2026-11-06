@@ -194,15 +194,43 @@ instance is asleep.
 | Protocol | HTTPS only |
 | Name | `kalys-waker` |
 
-**Origin group**
+**Failing over to the waker**
 
-Create an origin group containing both, primary `kalys-instance`, secondary
-`kalys-waker`, with failover on **500, 502, 503, 504** (connection errors and
-timeouts trigger it too).
+The obvious tool is an *origin group*, and it is not available: in CloudFront's
+plan-based console an origin group needs a paid plan, and paying for one would
+eat most of the $14/month this is all for.
 
-Origin failover only applies to `GET`, `HEAD` and `OPTIONS`. That is enough:
-the first page load is a GET, which is all that has to work while the instance
-is asleep.
+Custom error responses do the same job on any plan. CloudFront fetches an
+error page through the cache behaviour that matches its path, so an error page
+whose path belongs to the Lambda origin is fetched **from the Lambda**:
+
+1. **Behaviors -> Create behavior**
+
+   | Field | Value |
+   | --- | --- |
+   | Path pattern | `/waking*` |
+   | Origin | `kalys-waker` |
+   | Viewer protocol policy | Redirect HTTP to HTTPS |
+   | Allowed methods | GET, HEAD, OPTIONS |
+   | Cache policy | CachingDisabled |
+   | Origin request policy | AllViewerExceptHostHeader |
+
+2. **Error pages -> Create custom error response**, three times, for **502**,
+   **503** and **504**, each one:
+
+   | Field | Value |
+   | --- | --- |
+   | Error caching minimum TTL | **0** |
+   | Customize error response | Yes |
+   | Response page path | `/waking` |
+   | HTTP response code | **200** |
+
+   A sleeping instance produces any of the three depending on how far the
+   connection gets.
+
+**The TTL must be 0.** It defaults to 10 seconds, and anything above zero means
+CloudFront keeps serving "waking up" to everyone *after* the instance is
+already awake.
 
 **Default behaviour**
 
@@ -212,15 +240,22 @@ is asleep.
 | Viewer protocol policy | Redirect HTTP to HTTPS |
 | Allowed methods | GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE |
 | Cache policy | **CachingDisabled** |
-| Origin request policy | **AllViewer** |
+| Origin request policy | **AllViewerExceptHostHeader** |
 | Compress objects | No (Caddy already compresses) |
 
-`AllViewer` forwards the visitor's `Host` header, so the app sees
-`kalys.eraliev.com` rather than `origin.eraliev.com`. That matters: Chainlit
-builds its WebSocket URL from what it is told, and with the origin's name it
-would send browsers straight to the instance, around CloudFront. Caddy serves
-both names from one block, so the mismatch between the dialled name and the
-`Host` header is fine.
+**Use `AllViewerExceptHostHeader`, not `AllViewer`.** CloudFront takes the TLS
+server name it sends to the origin from the `Host` header it forwards. With
+`AllViewer` it dials `origin.eraliev.com` while presenting the viewer's
+hostname, so Caddy is asked for a certificate it does not have, aborts the
+handshake, and CloudFront answers **502 in a quarter of a second** - which
+looks exactly like a broken origin and is not. Worse, the Lambda origin can
+never work that way at all, since its certificate is
+`*.lambda-url.us-east-1.on.aws`.
+
+Sending each origin its own name is safe here, checked in the code rather than
+assumed: `gate.py` validates the hostname Cloudflare reports from the widget
+(a browser-side value) rather than the `Host` header, its redirect is relative,
+and `web.py` never reads `Host`.
 
 `CachingDisabled` is required: this is a chat, nothing is cacheable, and
 CloudFront needs it to pass WebSocket upgrades through.

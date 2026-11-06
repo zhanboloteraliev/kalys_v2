@@ -579,11 +579,41 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   woken instance would see a log file last touched yesterday and go straight
   back to sleep under the visitor who just woke it.
   **Waking is the hard half**, because while the instance is asleep nothing
-  answers at kalys.eraliev.com. CloudFront goes in front with an *origin
-  group*: the instance first, and a Lambda (`deploy/waker/`) as failover. The
+  answers at kalys.eraliev.com. CloudFront goes in front, with the instance as
+  its origin and a Lambda (`deploy/waker/`) behind a `/waking*` behaviour. The
   Lambda calls `StartInstances` and returns a waiting page that polls and
-  reloads. Both halves of that page were tested locally against a fake status
-  endpoint before being written down.
+  reloads.
+  **Not an origin group**, which is the obvious tool: in CloudFront's
+  plan-based console an origin group needs a paid plan, and paying for one
+  would eat most of the $14/month this is for. Custom error responses do the
+  same job on any plan - 502, 503 and 504 all return `/waking` with status
+  200, and because CloudFront fetches an error page through the cache
+  behaviour matching its path, it comes from the Lambda rather than from the
+  dead origin. The error caching TTL must be **0**, or CloudFront keeps
+  serving "waking up" after the instance is already awake.
+  **Set live on 2026-11-06.** Distribution `E3250JT14XCN3G`
+  (`ddm5ll9znysu3.cloudfront.net`), waker
+  `vr5rfnvlft4iyazz2jtw6b7epe0rzqsa.lambda-url.us-east-1.on.aws`, role
+  `KalysWakeRole`, policy `KalysWakeInstance`, ACM certificate
+  `50a19843-033c-453a-9f90-edce2a22c842`. `kalys.eraliev.com` is now an alias
+  to the distribution; `origin.eraliev.com` still points straight at the
+  Elastic IP, and must keep doing so or Caddy cannot renew.
+  **The trap that cost the most time: CloudFront takes the TLS server name it
+  sends the origin from the `Host` header it forwards.** With the `AllViewer`
+  origin request policy it dialled `origin.eraliev.com` while presenting the
+  viewer's hostname, Caddy had no certificate for that name, aborted the
+  handshake, and CloudFront answered **502 in a quarter of a second** - which
+  reads exactly like a broken origin and is not. `AllViewerExceptHostHeader`
+  fixes it and is also the only way the Lambda origin can ever work, since its
+  certificate is `*.lambda-url.us-east-1.on.aws`. Checked in the code before
+  changing it: `gate.py` validates the hostname Cloudflare reports from the
+  widget rather than the `Host` header, its redirect is relative, and `web.py`
+  never reads `Host`.
+  Both halves of the waiting page were tested locally against a fake status
+  endpoint before being written down, and the whole chain was then proved in
+  production: a request found the instance stopped, CloudFront served the
+  waiting page, the Lambda started the instance, and the site answered about
+  40 seconds later.
   Four things in the runbook are easy to get wrong and are called out there:
   **CloudFront's origin response timeout defaults to 30s and a Kyrgyz answer
   takes about 40** (it is translated after being written, so nothing streams)
