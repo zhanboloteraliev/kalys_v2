@@ -1842,3 +1842,46 @@ largest cost in this project - larger than Bedrock.
   be forwarded or the app handed browsers the origin's name and routed them
   around the CDN, and the origin response timeout was shorter than the slowest
   answer.
+
+## Step 21b: the filter that decides who is worth waking a server for
+
+### What we built
+The waker refuses to start the instance for anything that does not look like a
+person opening the page. Anything it refuses still gets a page with a
+"Wake the server" link.
+
+### Why
+Waking costs money, and it happens **before** the Turnstile gate can refuse
+anyone - the gate lives in the app, and the app is what is asleep. A public URL
+attracts crawlers and vulnerability scanners all day. Without a filter, every
+one of them starts a server, and the saving the whole design exists for quietly
+disappears.
+
+### What we learned
+- **Put the guard where the cost is.** The project already had a bot defence,
+  and it was in the wrong layer for this problem. Defences protect the thing
+  behind them, not the thing in front of them.
+- **Fail towards the human.** The filter is a guess from three headers, and
+  guesses are wrong sometimes. Refusing with a dead end would turn away real
+  people; refusing with a link costs a robot nothing it will ever spend and
+  costs a misjudged person one click. The asymmetry is the whole design.
+- **The honest test is real user agents.** A browser wakes it. Googlebot,
+  curl, a scanner, and - the one worth noticing - a browser fetching a favicon
+  do not, because a sub-resource request is not a visit. That last case would
+  have doubled every wake-up.
+- **Answer robots without being awake.** `/robots.txt` is served by the waker
+  itself, so a crawler can be told to go away by a system that is switched
+  off. The cost is that the site will not be indexed, which is a real trade
+  and worth stating rather than hiding.
+
+### Interview questions
+- *Your bot filter has false positives. Why is that acceptable?* Because the
+  failure mode is a link instead of a locked door. A robot will not click it
+  and a person will, so the cost of being wrong is one click rather than a
+  lost visitor. Design the consequence of the error, not just the accuracy.
+- *Why not use the WAF or the existing bot gate?* Both sit in front of the
+  application, and the application is asleep at the moment the decision has to
+  be made. The decision belongs to the only thing that is awake.
+- *How did you test it?* Against the real user-agent strings of a browser,
+  Googlebot, curl and a scanner, and then end to end in production: stop the
+  server, visit as a bot - it stays asleep - visit as a browser, it wakes.

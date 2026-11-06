@@ -611,9 +611,30 @@ More acts: the other in-force codes (21 codes in total, type `0030`). Add them i
   never reads `Host`.
   Both halves of the waiting page were tested locally against a fake status
   endpoint before being written down, and the whole chain was then proved in
-  production: a request found the instance stopped, CloudFront served the
-  waiting page, the Lambda started the instance, and the site answered about
-  40 seconds later.
+  production on 2026-11-06:
+  instance stopped 22:15:30 -> a request with a `curl` user agent got
+  "Kalys is asleep" and **the instance stayed stopped** -> a request with a
+  browser user agent got "Kalys is waking up" and the instance went to
+  `running` -> the site answered (401, the gate) about **20 seconds** later.
+  **Robots must not wake it**, because waking happens before the Turnstile
+  gate can refuse anyone - the gate is in the app, and the app is asleep. So
+  `looks_like_a_person` in the waker asks three cheap questions of the headers
+  that survive the error-page request: does it want HTML, does it claim to be
+  a browser, does it name itself a robot. A request that fails is **not**
+  turned away: it gets a page with a "Wake the server" link that wakes on
+  `?wake=1`. No robot clicks a link, and anyone misjudged loses one click
+  rather than being locked out. Verified against real user agents: a browser
+  wakes it; Googlebot, curl, a scanner, and a browser fetching a favicon do
+  not. `/robots.txt` has its own behaviour pointing at the waker, so a crawler
+  is told `Disallow: /` without the instance being awake to say it - which
+  means the site will not appear in search results, a deliberate trade for not
+  paying for crawler wake-ups.
+  **Temporary access used here:** `KalysColdStartTemporary` on `kalysdev`
+  (cloudfront:UpdateDistribution on this one distribution, ec2 start/stop on
+  this one instance, route53 change) plus `KalysReadOnlyCdn` (read-only
+  cloudfront/lambda/acm). The first must be deleted once the setup is settled;
+  the second is safe to keep and is what turned a ten-round-trip 502 hunt into
+  one API call.
   Four things in the runbook are easy to get wrong and are called out there:
   **CloudFront's origin response timeout defaults to 30s and a Kyrgyz answer
   takes about 40** (it is translated after being written, so nothing streams)
